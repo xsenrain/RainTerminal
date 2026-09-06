@@ -101,7 +101,6 @@ import {
   Languages,
   ListTree,
   Maximize2,
-  MessageCircle,
   Minimize2,
   Monitor,
   Moon,
@@ -165,20 +164,7 @@ type AppUpdateDownloadResult = {
   totalBytes: number
 }
 
-const APP_VERSION = '0.2.2'
-const XUNDU_WEBSITE_URL = 'https://xunduyun.com/'
-const TECHNICAL_QQ_GROUPS = [
-  {
-    label: '技术 QQ 交流群',
-    number: '1090339570',
-    url: 'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=1090339570&card_type=group&source=qrcode',
-  },
-  {
-    label: '技术 QQ 交流二群',
-    number: '262430517',
-    url: 'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=262430517&card_type=group&source=qrcode',
-  },
-] as const
+const APP_VERSION = '1.0.0'
 
 type AppLocaleContextValue = {
   language: AppLanguage
@@ -2972,10 +2958,10 @@ function LiquidTitleBar({
     <header className="titlebar" data-tauri-drag-region onMouseDown={startWindowDrag}>
       <div className="brand-block" data-tauri-drag-region>
         <div className="brand-icon">
-          <img src="/xundu-terminal-icon.svg" alt="" />
+          <img src="/rain-terminal-icon.svg" alt="" />
         </div>
         <div>
-          <h1>XunDuTerminal</h1>
+          <h1>RainTerminal</h1>
           <p>{t('服务器工作台')}</p>
         </div>
       </div>
@@ -10096,7 +10082,6 @@ function SettingsModal({
     installerPath: '',
     error: '',
   })
-  const [copiedGroup, setCopiedGroup] = useState('')
   const [externalLinkFeedback, setExternalLinkFeedback] = useState('')
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const updateDownloadRef = useRef<{ id: string; cancelled: boolean } | null>(null)
@@ -10148,7 +10133,7 @@ function SettingsModal({
     const transferId = crypto.randomUUID()
     const transfer = { id: transferId, cancelled: false }
     updateDownloadRef.current = transfer
-    const fileName = installer.url.split('/').filter(Boolean).at(-1) ?? `XunDuTerminal_${version}_x64-setup.exe`
+    const fileName = installer.url.split('/').filter(Boolean).at(-1) ?? `RainTerminal_${version}_x64-setup.exe`
     const baseProgress: AppUpdateDownloadState = {
       status: 'downloading',
       totalBytes: installer.size,
@@ -10289,24 +10274,6 @@ function SettingsModal({
     }
   }
 
-  async function openTechnicalGroup(group: (typeof TECHNICAL_QQ_GROUPS)[number]) {
-    try {
-      await invoke('open_external_url', { url: group.url })
-      setCopiedGroup(`opened:${group.number}`)
-      if (copyFeedbackTimerRef.current !== null) window.clearTimeout(copyFeedbackTimerRef.current)
-      copyFeedbackTimerRef.current = window.setTimeout(() => setCopiedGroup(''), 1600)
-    } catch {
-      try {
-        await navigator.clipboard.writeText(group.number)
-        setCopiedGroup(`copied:${group.number}`)
-        if (copyFeedbackTimerRef.current !== null) window.clearTimeout(copyFeedbackTimerRef.current)
-        copyFeedbackTimerRef.current = window.setTimeout(() => setCopiedGroup(''), 1600)
-      } catch {
-        setCopiedGroup('error')
-      }
-    }
-  }
-
   return (
     <motion.div
       className="modal-backdrop"
@@ -10359,7 +10326,7 @@ function SettingsModal({
                   <Palette size={16} />
                   <div>
                     <strong>{t('主题预设')}</strong>
-                    <span>{t('选择整套工作台与终端配色；XunDu 默认主题保持为初始选项。')}</span>
+                    <span>{t('选择整套工作台与终端配色；RainTerminal 默认主题保持为初始选项。')}</span>
                   </div>
                 </div>
                 <motion.div
@@ -10645,10 +10612,10 @@ function SettingsModal({
                 transition={{ duration: reduceMotion ? 0 : 0.34, ease: [0.16, 1, 0.3, 1] }}
               >
                 <section className="about-product-card">
-                  <img className="about-product-mark" src="/xundu-terminal-icon.svg" alt="" />
+                  <img className="about-product-mark" src="/rain-terminal-icon.svg" alt="" />
                   <div className="about-product-copy">
                     <div className="about-product-title">
-                      <h3>XunDuTerminal</h3>
+                      <h3>RainTerminal</h3>
                       <span>v{updateResult?.currentVersion ?? APP_VERSION}</span>
                     </div>
                     <p>{t('面向 Windows 的一体化服务器工作台，将终端、文件、监控、进程与远程桌面集中在可持久化工作区中。')}</p>
@@ -10765,35 +10732,6 @@ function SettingsModal({
                     </div>
                   )}
                 </section>
-
-                <div className="about-resource-grid">
-                  <button className="about-resource-card website" type="button" onClick={() => { void openExternalUrl(XUNDU_WEBSITE_URL) }}>
-                    <span className="about-card-icon"><Server size={17} /></span>
-                    <span>
-                      <strong>{t('企业级服务器')}</strong>
-                      <small>https://xunduyun.com/</small>
-                    </span>
-                    <ExternalLink size={15} />
-                  </button>
-                  <section className="about-community-card">
-                    <div className="about-community-title">
-                      <span className="about-card-icon"><MessageCircle size={17} /></span>
-                      <strong>{t('技术交流')}</strong>
-                    </div>
-                    {TECHNICAL_QQ_GROUPS.map((group) => (
-                      <button type="button" onClick={() => { void openTechnicalGroup(group) }} key={group.number}>
-                        <span><small>{t(group.label)}</small><strong>{group.number}</strong></span>
-                        <em>{t(copiedGroup === `opened:${group.number}`
-                          ? '正在跳转'
-                          : copiedGroup === `copied:${group.number}`
-                            ? '群号已复制'
-                            : copiedGroup === 'error'
-                              ? '打开失败'
-                              : '打开群聊')}</em>
-                      </button>
-                    ))}
-                  </section>
-                </div>
 
                 {externalLinkFeedback && <p className="about-inline-feedback" role="status">{t(externalLinkFeedback)}</p>}
 

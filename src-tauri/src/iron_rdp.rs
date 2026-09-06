@@ -211,7 +211,7 @@ pub async fn rdp_connect(
         .with_domain(domain)
         .with_client_build(22_621)
         .with_client_dir(r"C:\Windows\System32\mstscax.dll")
-        .with_client_name("XunDuTerminal")
+        .with_client_name("RainTerminal")
         .with_platform(ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS)
         .with_desktop_width(width)
         .with_desktop_height(height)
@@ -270,7 +270,7 @@ pub async fn rdp_connect(
         .await;
     });
     std::thread::Builder::new()
-        .name(format!("xundu-rdp-{session_id}"))
+        .name(format!("rain-rdp-{session_id}"))
         .spawn(move || {
             match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -899,7 +899,7 @@ fn transfer_staging_path(destination: &Path, suffix: &str) -> PathBuf {
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("file");
-    destination.with_file_name(format!(".{name}.xundu-{nonce}.{suffix}"))
+    destination.with_file_name(format!(".{name}.rain-{nonce}.{suffix}"))
 }
 
 #[cfg(target_os = "windows")]
@@ -1245,7 +1245,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn staged_file_replaces_existing_file_only_after_completion() {
-        let root = std::env::temp_dir().join(format!("xundu-rdp-stage-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("rain-rdp-stage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create staging fixture");
         let destination = root.join("report.txt");
@@ -1266,7 +1266,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn staged_file_never_replaces_a_same_named_directory() {
-        let root = std::env::temp_dir().join(format!("xundu-rdp-dir-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("rain-rdp-dir-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create directory fixture");
         let destination = root.join("assets");
@@ -1295,7 +1295,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn native_file_clipboard_describes_nested_directories() {
-        let root = std::env::temp_dir().join(format!("xundu-cliprdr-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("rain-cliprdr-{}", std::process::id()));
         let nested = root.join("folder");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&nested).expect("create clipboard fixture");

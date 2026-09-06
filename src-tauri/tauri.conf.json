@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "XunDuTerminal",
-  "version": "0.2.2",
-  "identifier": "com.xundu.terminal",
+  "productName": "RainTerminal",
+  "version": "1.0.0",
+  "identifier": "com.rain.terminal",
   "build": {
     "frontendDist": "../dist",
     "beforeDevCommand": "npm.cmd run dev -- --host 127.0.0.1 --port 5173",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "XunDuTerminal",
+        "title": "RainTerminal",
         "width": 1740,
         "height": 1000,
         "minWidth": 1200,

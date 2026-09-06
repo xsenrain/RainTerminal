@@ -563,10 +563,10 @@ const SSH_IO_TIMEOUT_MS: u32 = 12_000;
 const DIAGNOSTICS_MAX_BYTES: u64 = 5 * 1024 * 1024;
 static DIAGNOSTIC_HASH_STATE: OnceLock<RandomState> = OnceLock::new();
 const DEFAULT_APP_UPDATE_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/KaiGe7384/XunDuTerminal/main/deploy/xunduterminal/latest.json";
+    "https://raw.githubusercontent.com/xsenrain/RainTerminal/main/deploy/rainterminal/latest.json";
 const MAX_APP_UPDATE_BYTES: u64 = 512 * 1024 * 1024;
-const OFFICIAL_UPDATE_OWNER: &str = "kaige7384";
-const OFFICIAL_UPDATE_REPOSITORY: &str = "xunduterminal";
+const OFFICIAL_UPDATE_OWNER: &str = "xsenrain";
+const OFFICIAL_UPDATE_REPOSITORY: &str = "rainterminal";
 const QQ_GROUP_ONE_URL: &str = "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=1090339570&card_type=group&source=qrcode";
 const QQ_GROUP_TWO_URL: &str = "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=262430517&card_type=group&source=qrcode";
 
@@ -682,7 +682,7 @@ fn validate_app_update_installer(
     }
     let file_name = safe_file_name(segments[5])?;
     let lower_name = file_name.to_ascii_lowercase();
-    let expected_file_name = format!("xunduterminal_{expected_version}_x64-setup.exe");
+    let expected_file_name = format!("rainterminal_{expected_version}_x64-setup.exe");
     if lower_name != expected_file_name {
         return Err("更新清单未提供受支持的 Windows 安装包".to_string());
     }
@@ -694,7 +694,7 @@ fn check_app_update_sync() -> Result<AppUpdateCheck, String> {
         option_env!("XUNDU_UPDATE_MANIFEST_URL").unwrap_or(DEFAULT_APP_UPDATE_MANIFEST_URL);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
-        .user_agent(concat!("XunDuTerminal/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("RainTerminal/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| format!("无法初始化更新检查：{error}"))?;
     let response = match client.get(manifest_url).send() {
@@ -846,7 +846,7 @@ fn download_app_update_sync(
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15 * 60))
-        .user_agent(concat!("XunDuTerminal/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("RainTerminal/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| format!("无法初始化更新下载：{error}"))?;
     let mut response = client
@@ -1044,9 +1044,9 @@ fn diagnostics_path() -> PathBuf {
     env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("XunDuTerminal")
+        .join("RainTerminal")
         .join("logs")
-        .join("xundu-diagnostics.log")
+        .join("rain-diagnostics.log")
 }
 
 fn diag_log(scope: &str, message: impl AsRef<str>) {
@@ -1276,7 +1276,7 @@ async fn export_diagnostics() -> Result<Option<String>, String> {
         }
         let destination = rfd::FileDialog::new()
             .set_title("Export redacted diagnostics")
-            .set_file_name("xundu-diagnostics.log")
+            .set_file_name("rain-diagnostics.log")
             .save_file();
         let Some(destination) = destination else {
             return Ok(None);
@@ -2645,7 +2645,7 @@ fn configure_terminal_environment(command: &mut CommandBuilder) {
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     command.env("CLICOLOR", "1");
-    command.env("TERM_PROGRAM", "XunDuTerminal");
+    command.env("TERM_PROGRAM", "RainTerminal");
     command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
 }
 
@@ -4671,7 +4671,7 @@ fn remote_download_staging_path(destination: &Path) -> PathBuf {
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("download");
-    destination.with_file_name(format!(".{name}.xundu.part"))
+    destination.with_file_name(format!(".{name}.rain.part"))
 }
 
 #[tauri::command]
@@ -4877,7 +4877,7 @@ fn upload_local_directory(
     }
     let staged = join_remote_path(
         remote_directory,
-        &format!(".{name}.xundu-upload-{}.part", epoch_millis()),
+        &format!(".{name}.rain-upload-{}.part", epoch_millis()),
     );
     sftp.mkdir(Path::new(&staged), 0o755)
         .map_err(|error| format!("无法创建远程临时目录 {staged}: {error}"))?;
@@ -4946,7 +4946,7 @@ fn upload_local_file(
     }
     let staged = join_remote_path(
         remote_directory,
-        &format!(".{name}.xundu-upload-{}.part", epoch_millis()),
+        &format!(".{name}.rain-upload-{}.part", epoch_millis()),
     );
     let mut reader = File::open(source)
         .map_err(|error| format!("无法打开上传文件 {}: {error}", source.display()))?;
@@ -5689,7 +5689,7 @@ fn verify_or_store_known_host(session: &Session, host: &str, port: u16) -> Resul
                 .add(
                     &known_host_name,
                     host_key,
-                    "XunDuTerminal accept-new",
+                    "RainTerminal accept-new",
                     host_key_type.into(),
                 )
                 .map_err(|error| format!("Failed to trust the SSH host key: {error}"))?;
@@ -5783,7 +5783,7 @@ fn replace_known_host_record(session: &Session, host: &str, port: u16) -> Result
         .add(
             &known_host_name,
             host_key,
-            "XunDuTerminal confirmed replacement",
+            "RainTerminal confirmed replacement",
             host_key_type.into(),
         )
         .map_err(|error| format!("Failed to store the new SSH host key: {error}"))?;
@@ -6321,7 +6321,7 @@ fn save_text_export(suggested_name: String, content: String) -> Result<Option<St
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| "XunDuTerminal-export.json".into());
+        .unwrap_or_else(|| "RainTerminal-export.json".into());
     let Some(path) = rfd::FileDialog::new()
         .add_filter("JSON", &["json"])
         .set_file_name(&safe_name)

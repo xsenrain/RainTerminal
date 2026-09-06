@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-const CREDENTIAL_TARGET_PREFIX: &str = "XunDuTerminal/";
+const CREDENTIAL_TARGET_PREFIX: &str = "RainTerminal/";
 const MAX_CREDENTIAL_KEY_BYTES: usize = 200;
 const MAX_CREDENTIAL_SECRET_BYTES: usize = 2048;
 
@@ -103,7 +103,7 @@ mod platform {
     pub fn store(key: &str, user_name: &str, secret: &str) -> Result<(), String> {
         let mut target = to_wide(&target_name(key));
         let mut user = to_wide(if user_name.trim().is_empty() {
-            "XunDuTerminal"
+            "RainTerminal"
         } else {
             user_name
         });

@@ -1,16 +1,16 @@
 {
-  "name": "xunduterminal",
+  "name": "rainterminal",
   "private": true,
-  "version": "0.2.2",
+  "version": "1.0.0",
   "description": "面向 Windows 的开源服务器工作台，集成 SSH、文件管理、监控、进程与远程桌面。",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/KaiGe7384/XunDuTerminal.git"
+    "url": "git+https://github.com/xsenrain/RainTerminal.git"
   },
-  "homepage": "https://github.com/KaiGe7384/XunDuTerminal#readme",
+  "homepage": "https://github.com/xsenrain/RainTerminal#readme",
   "bugs": {
-    "url": "https://github.com/KaiGe7384/XunDuTerminal/issues"
+    "url": "https://github.com/xsenrain/RainTerminal/issues"
   },
   "type": "module",
   "scripts": {
