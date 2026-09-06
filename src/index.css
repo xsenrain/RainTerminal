@@ -6260,3 +6260,206 @@ body.native-window-drag-active .monitor-tabs button {
   word-break: break-all;
   background: var(--surface-1);
 }
+
+/* ============ 巡检命令模板联动 ============ */
+.inspect-command-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.inspect-command-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.inspect-command-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.inspect-command-item-main strong {
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.inspect-command-item-main code {
+  font-family: var(--mono-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspect-command-item-actions {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.inspect-command-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.inspect-command-add-row input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 11.5px;
+}
+
+.inspect-command-add-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.inspect-template-picker {
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  max-height: 280px;
+  overflow: auto;
+}
+
+.inspect-template-search {
+  margin-bottom: 6px;
+}
+
+.inspect-template-search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  box-sizing: border-box;
+}
+
+.inspect-template-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.inspect-template-group {
+  border-top: 1px solid var(--border);
+}
+
+.inspect-template-group:first-child {
+  border-top: none;
+}
+
+.inspect-template-group summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.inspect-template-group summary::-webkit-details-marker { display: none; }
+
+.inspect-template-group summary::before {
+  content: '▸';
+  font-size: 9px;
+  color: var(--text-tertiary);
+  transition: transform var(--t-fast);
+}
+
+.inspect-template-group[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.inspect-template-group summary span {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.inspect-template-group summary.recommended::after {
+  content: '推荐';
+  font-size: 9px;
+  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 600;
+}
+
+.inspect-template-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px 4px 14px;
+}
+
+.inspect-template-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.inspect-template-item-main strong {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.inspect-template-item-main code {
+  font-family: var(--mono-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspect-template-add {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-hover);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inspect-template-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

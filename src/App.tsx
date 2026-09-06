@@ -9219,7 +9219,10 @@ function Inspector({
     remark: '',
   })
   const [selectedInspectIds, setSelectedInspectIds] = useState<Set<string>>(new Set())
-  const [inspectCommandText, setInspectCommandText] = useState('')
+  const [inspectCommands, setInspectCommands] = useState<{ id: string; name: string; command: string }[]>([])
+  const [inspectManualCommand, setInspectManualCommand] = useState('')
+  const [inspectTemplatePickerOpen, setInspectTemplatePickerOpen] = useState(false)
+  const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
   const [inspectRunning, setInspectRunning] = useState(false)
   const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
 
@@ -9325,11 +9328,10 @@ function Inspector({
 
   async function runInspectBatch() {
     const selectedDevices = inspectDevices.filter((d) => selectedInspectIds.has(d.id))
-    const commandLines = inspectCommandText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    if (selectedDevices.length === 0 || commandLines.length === 0) return
+    const commandList = inspectCommands
+      .map((item) => ({ name: item.name, command: item.command.trim() }))
+      .filter((item) => item.command.length > 0)
+    if (selectedDevices.length === 0 || commandList.length === 0) return
 
     setInspectRunning(true)
     setInspectResults(null)
@@ -9343,10 +9345,7 @@ function Inspector({
           password: d.password,
           vendor: d.vendor,
         })),
-        commands: commandLines.map((command, index) => ({
-          name: `命令${index + 1}`,
-          command,
-        })),
+        commands: commandList,
       })
       setInspectResults(results)
     } catch (reason) {
@@ -9376,6 +9375,38 @@ function Inspector({
       }
       return next
     })
+  }
+
+  function addInspectCommand(name: string, command: string) {
+    if (!command.trim()) return
+    const id = `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+    setInspectCommands((current) => [...current, { id, name: name || t('自定义命令'), command: command.trim() }])
+  }
+
+  function removeInspectCommand(id: string) {
+    setInspectCommands((current) => current.filter((item) => item.id !== id))
+  }
+
+  function moveInspectCommand(id: string, direction: -1 | 1) {
+    setInspectCommands((current) => {
+      const index = current.findIndex((item) => item.id === id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= current.length) return current
+      const next = [...current]
+      const [moved] = next.splice(index, 1)
+      next.splice(target, 0, moved)
+      return next
+    })
+  }
+
+  function addManualInspectCommand() {
+    if (!inspectManualCommand.trim()) return
+    addInspectCommand(t('自定义命令'), inspectManualCommand)
+    setInspectManualCommand('')
+  }
+
+  function addSnippetToInspect(snippet: Snippet) {
+    addInspectCommand(snippet.name, snippet.command)
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9860,7 +9891,7 @@ function Inspector({
               <div className="utility-section-head">
                 <div>
                   <strong>{t('批量执行')}</strong>
-                  <span>{t('勾选设备，每行一条命令。')}</span>
+                  <span>{t('勾选设备，配置要执行的命令。')}</span>
                 </div>
                 {inspectDevices.length > 0 && (
                   <button
@@ -9878,21 +9909,117 @@ function Inspector({
                   </button>
                 )}
               </div>
-              <label className="utility-command-field">
-                <span>{t('命令列表')}</span>
-                <textarea
-                  className="inspect-command-input"
-                  value={inspectCommandText}
-                  onChange={(event) => setInspectCommandText(event.target.value)}
-                  placeholder={t('每行一条命令，如：\ndisplay version\ndisplay interface brief')}
-                  rows={3}
+
+              {inspectCommands.length > 0 && (
+                <div className="inspect-command-list">
+                  {inspectCommands.map((item, index) => (
+                    <div className="inspect-command-item" key={item.id}>
+                      <div className="inspect-command-item-main">
+                        <strong>{item.name}</strong>
+                        <code>{item.command}</code>
+                      </div>
+                      <div className="inspect-command-item-actions">
+                        <IconButton label={t('上移')} onClick={() => moveInspectCommand(item.id, -1)} disabled={index === 0}>
+                          <ArrowUp size={13} />
+                        </IconButton>
+                        <IconButton label={t('下移')} onClick={() => moveInspectCommand(item.id, 1)} disabled={index === inspectCommands.length - 1}>
+                          <ArrowDown size={13} />
+                        </IconButton>
+                        <IconButton label={t('移除命令')} onClick={() => removeInspectCommand(item.id)}>
+                          <X size={13} />
+                        </IconButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="inspect-command-add-row">
+                <input
+                  value={inspectManualCommand}
+                  onChange={(event) => setInspectManualCommand(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      addManualInspectCommand()
+                    }
+                  }}
+                  placeholder={t('输入命令后回车添加')}
                 />
-              </label>
+                <button className="utility-primary-button compact" type="button" onClick={addManualInspectCommand} disabled={!inspectManualCommand.trim()}>
+                  <Plus size={13} />
+                  {t('添加')}
+                </button>
+                <button className="utility-text-button" type="button" onClick={() => setInspectTemplatePickerOpen((v) => !v)}>
+                  {t('从模板选择')}
+                </button>
+              </div>
+
+              {inspectTemplatePickerOpen && (
+                <div className="inspect-template-picker">
+                  <div className="inspect-template-search">
+                    <input
+                      value={inspectTemplateSearch}
+                      onChange={(event) => setInspectTemplateSearch(event.target.value)}
+                      placeholder={t('搜索命令模板')}
+                    />
+                  </div>
+                  {(() => {
+                    const recommendedVendors = new Set(
+                      inspectDevices
+                        .filter((d) => selectedInspectIds.has(d.id))
+                        .map((d) => d.vendor),
+                    )
+                    const groups = new Map<string, Snippet[]>()
+                    for (const snippet of snippets) {
+                      if (
+                        inspectTemplateSearch &&
+                        !snippet.name.toLowerCase().includes(inspectTemplateSearch.toLowerCase()) &&
+                        !snippet.command.toLowerCase().includes(inspectTemplateSearch.toLowerCase())
+                      ) {
+                        continue
+                      }
+                      const category = snippet.category || '未分类'
+                      if (!groups.has(category)) groups.set(category, [])
+                      groups.get(category)!.push(snippet)
+                    }
+                    const addedCommands = new Set(inspectCommands.map((item) => item.command))
+                    return [...groups.entries()].map(([category, items]) => {
+                      const recommended = recommendedVendors.size > 0 && [...recommendedVendors].some((v) => category.includes(v))
+                      return (
+                        <details className="inspect-template-group" key={category} open={recommended || Boolean(inspectTemplateSearch)}>
+                          <summary className={recommended ? 'recommended' : undefined}>
+                            {category}
+                            <span>{items.length}</span>
+                          </summary>
+                          {items.map((snippet) => (
+                            <div className="inspect-template-item" key={snippet.id}>
+                              <div className="inspect-template-item-main">
+                                <strong>{snippet.name}</strong>
+                                <code>{snippet.command}</code>
+                              </div>
+                              <button
+                                className="inspect-template-add"
+                                type="button"
+                                disabled={addedCommands.has(snippet.command)}
+                                onClick={() => addSnippetToInspect(snippet)}
+                              >
+                                {addedCommands.has(snippet.command) ? t('已添加') : '+'}
+                              </button>
+                            </div>
+                          ))}
+                        </details>
+                      )
+                    })
+                  })()}
+                </div>
+              )}
+
               <button
                 className="utility-primary-button"
                 type="button"
                 onClick={runInspectBatch}
-                disabled={inspectRunning || selectedInspectIds.size === 0 || !inspectCommandText.trim()}
+                disabled={inspectRunning || selectedInspectIds.size === 0 || inspectCommands.length === 0}
               >
                 <Activity size={14} />
                 {inspectRunning ? t('执行中…') : `${t('执行')} (${selectedInspectIds.size})`}
@@ -13060,13 +13187,15 @@ function IconButton({
   label,
   children,
   onClick,
+  disabled,
 }: {
   label: string
   children: ReactNode
   onClick?: () => void
+  disabled?: boolean
 }) {
   return (
-    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick}>
+    <button className="icon-button" type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
       {children}
     </button>
   )
