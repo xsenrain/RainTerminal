@@ -102,3 +102,21 @@
 - **改动文件**：`src/App.tsx`、`src/i18n.ts`、`src/index.css`
 - **验证**：`npm run build` 通过；已启动 `npm run desktop:dev` 供用户手动验证（GUI 自动化工具初始化失败，未能自动截图）
 - **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
+
+---
+
+## 2026-09-06 · 阶段 2 起步：自动化巡检 Tab + 设备管理（v1.1.0-dev）
+
+- **改动文件**：`src/App.tsx`（类型/持久化 hook/CRUD/Inspector 渲染/DockRail 入口）、`src/i18n.ts`（文案）、`src/index.css`（样式）、`package.json` / `package-lock.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`（版本号）
+- **版本号**：1.0.1 → 1.1.0-dev
+- **改动内容**：
+  - 新增 `InspectDevice` 类型：id / name / host / port / username / password / vendor / remark
+  - 新增厂商枚举 `INSPECT_VENDORS`：linux / huawei / h3c / ruijie / zte / other
+  - 新增 `usePersistentInspectDevices` hook（localStorage key `rain.inspectDevices`，独立于旧 xundu 前缀）
+  - 新增 `normalizeInspectDevice` 数据清洗
+  - App 层新增设备 CRUD：addInspectDevice / updateInspectDevice / deleteInspectDevice（含 toast 提示）
+  - `InspectorTab` 扩展 `'inspect'`；DockRail「活动」区新增「自动化巡检」入口（Activity 图标）
+  - Inspector 新增 inspect 分支：设备列表 + 添加/编辑表单（名称/IP/端口/厂商/用户名/密码/备注）+ 删除确认
+- **说明**：本步仅设备管理（规划第 1 步），批量执行命令在下一步实现
+- **验证**：`npm run build` 通过（无 TS 错误）
+- **commit**：`e9ed17f`
