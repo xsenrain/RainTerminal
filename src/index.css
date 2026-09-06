@@ -6005,3 +6005,113 @@ body.native-window-drag-active .file-toolbar button,
 body.native-window-drag-active .monitor-tabs button {
   pointer-events: none;
 }
+
+/* ============ 自动化巡检 ============ */
+.utility-primary-button.compact {
+  width: auto;
+  flex-shrink: 0;
+  padding: 0 12px;
+}
+
+.inspect-editor {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.inspect-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.inspect-remark-field {
+  grid-column: 1 / -1;
+}
+
+.inspect-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inspect-device-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inspect-device-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+}
+
+.inspect-device-item:hover {
+  border-color: var(--border-medium);
+}
+
+.inspect-device-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.inspect-device-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspect-device-title strong {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspect-vendor-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.inspect-vendor-tag.vendor-linux { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-hover); }
+.inspect-vendor-tag.vendor-huawei { background: color-mix(in srgb, #E63946 14%, transparent); color: #E63946; }
+.inspect-vendor-tag.vendor-h3c { background: color-mix(in srgb, #2A9D8F 14%, transparent); color: #2A9D8F; }
+.inspect-vendor-tag.vendor-ruijie { background: color-mix(in srgb, #E76F51 14%, transparent); color: #E76F51; }
+.inspect-vendor-tag.vendor-zte { background: color-mix(in srgb, #3A86FF 14%, transparent); color: #3A86FF; }
+.inspect-vendor-tag.vendor-other { background: color-mix(in srgb, #8D99AE 14%, transparent); color: #8D99AE; }
+
+.inspect-device-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+}
+
+.inspect-device-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspect-device-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}

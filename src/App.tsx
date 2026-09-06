@@ -164,7 +164,7 @@ type AppUpdateDownloadResult = {
   totalBytes: number
 }
 
-const APP_VERSION = '1.0.1'
+const APP_VERSION = '1.1.0-dev'
 
 type AppLocaleContextValue = {
   language: AppLanguage
@@ -238,7 +238,20 @@ type SessionNote = {
   done: boolean
 }
 
-type InspectorTab = 'run' | 'snippets' | 'history' | 'notes'
+type InspectorTab = 'run' | 'snippets' | 'history' | 'notes' | 'inspect'
+
+type InspectDevice = {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  password: string
+  vendor: string
+  remark: string
+}
+
+const INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other'] as const
 
 type DockPanel = 'servers' | 'local' | InspectorTab | null
 
@@ -942,6 +955,7 @@ function App() {
   const [snippets, setSnippets] = usePersistentSnippets()
   const [snippetCategories, setSnippetCategories] = usePersistentSnippetCategories()
   const [sessionNotes, setSessionNotes] = usePersistentSessionNotes()
+  const [inspectDevices, setInspectDevices] = usePersistentInspectDevices()
   const [remoteAuxConcurrency, setRemoteAuxConcurrency] = usePersistentRemoteAuxConcurrency()
   const [appearance, setAppearance] = usePersistentAppAppearance()
   const [themePreset, setThemePreset] = usePersistentThemePreset()
@@ -2267,6 +2281,22 @@ function App() {
     )
   }
 
+  function addInspectDevice(device: Omit<InspectDevice, 'id'>) {
+    const id = `inspect-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    setInspectDevices((current) => [...current, { ...device, id }])
+    setToast(t('设备已添加'))
+  }
+
+  function updateInspectDevice(id: string, patch: Partial<Omit<InspectDevice, 'id'>>) {
+    setInspectDevices((current) => current.map((d) => (d.id === id ? { ...d, ...patch } : d)))
+    setToast(t('设备已更新'))
+  }
+
+  function deleteInspectDevice(id: string) {
+    setInspectDevices((current) => current.filter((d) => d.id !== id))
+    setToast(t('设备已删除'))
+  }
+
   async function importOpenSshConfig() {
     try {
       const imported = await invoke<unknown[]>('ssh_import_config')
@@ -2434,6 +2464,7 @@ function App() {
         local: '本地工具',
         run: '运行命令',
         snippets: '常用命令',
+        inspect: '自动化巡检',
         history: '执行记录',
         notes: '待办笔记',
       } satisfies Record<Exclude<DockPanel, null>, string>)[activePanel])
@@ -2565,6 +2596,10 @@ function App() {
                       onDeleteCategory={deleteCategory}
                       onMoveSnippet={moveSnippet}
                       onReorderCategories={reorderCategories}
+                      inspectDevices={inspectDevices}
+                      onAddInspectDevice={addInspectDevice}
+                      onUpdateInspectDevice={updateInspectDevice}
+                      onDeleteInspectDevice={deleteInspectDevice}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -3307,6 +3342,7 @@ function DockRail({
   const activityItems: Array<{ panel: Exclude<DockPanel, null>; label: string; icon: ReactNode }> = [
     { panel: 'run', label: '运行命令', icon: <Terminal size={18} /> },
     { panel: 'snippets', label: '常用命令', icon: <Star size={18} /> },
+    { panel: 'inspect', label: '自动化巡检', icon: <Activity size={18} /> },
     { panel: 'history', label: '执行记录', icon: <Clock3 size={18} /> },
     { panel: 'notes', label: '待办笔记', icon: <ClipboardList size={18} /> },
   ]
@@ -9106,6 +9142,10 @@ function Inspector({
   onDeleteCategory,
   onMoveSnippet,
   onReorderCategories,
+  inspectDevices,
+  onAddInspectDevice,
+  onUpdateInspectDevice,
+  onDeleteInspectDevice,
   commandHistory,
   onClearHistory,
   notes,
@@ -9128,6 +9168,10 @@ function Inspector({
   onDeleteCategory: (name: string) => void
   onMoveSnippet: (id: string, category: string) => void
   onReorderCategories: (fromIndex: number, toIndex: number) => void
+  inspectDevices: InspectDevice[]
+  onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
+  onUpdateInspectDevice: (id: string, patch: Partial<Omit<InspectDevice, 'id'>>) => void
+  onDeleteInspectDevice: (id: string) => void
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9148,6 +9192,17 @@ function Inspector({
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
+  const [inspectEditorOpen, setInspectEditorOpen] = useState(false)
+  const [inspectEditingId, setInspectEditingId] = useState<string | null>(null)
+  const [inspectDraft, setInspectDraft] = useState<Omit<InspectDevice, 'id'>>({
+    name: '',
+    host: '',
+    port: 22,
+    username: '',
+    password: '',
+    vendor: 'linux',
+    remark: '',
+  })
 
   useEffect(() => {
     if (!contextMenu && !groupContextMenu) return
@@ -9196,6 +9251,57 @@ function Inspector({
       setExpandedCategories((prev) => new Set(prev).add(name))
     }
     setNewCategoryName('')
+  }
+
+  function openInspectEditor(device?: InspectDevice) {
+    if (device) {
+      setInspectEditingId(device.id)
+      setInspectDraft({
+        name: device.name,
+        host: device.host,
+        port: device.port,
+        username: device.username,
+        password: device.password,
+        vendor: device.vendor,
+        remark: device.remark,
+      })
+    } else {
+      setInspectEditingId(null)
+      setInspectDraft({
+        name: '',
+        host: '',
+        port: 22,
+        username: '',
+        password: '',
+        vendor: 'linux',
+        remark: '',
+      })
+    }
+    setInspectEditorOpen(true)
+  }
+
+  function saveInspectDevice() {
+    if (!inspectDraft.name.trim() || !inspectDraft.host.trim()) return
+    if (inspectEditingId) {
+      onUpdateInspectDevice(inspectEditingId, {
+        ...inspectDraft,
+        name: inspectDraft.name.trim(),
+        host: inspectDraft.host.trim(),
+      })
+    } else {
+      onAddInspectDevice({
+        ...inspectDraft,
+        name: inspectDraft.name.trim(),
+        host: inspectDraft.host.trim(),
+      })
+    }
+    setInspectEditorOpen(false)
+  }
+
+  function confirmDeleteInspectDevice(device: InspectDevice) {
+    const confirmed = window.confirm(`删除设备「${device.name}」？`)
+    if (!confirmed) return
+    onDeleteInspectDevice(device.id)
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9539,6 +9645,132 @@ function Inspector({
                   <IconButton label={t('删除笔记')} onClick={() => onDeleteNote(note.id)}>
                     <Trash2 size={14} />
                   </IconButton>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'inspect' && (
+          <div className="utility-page inspect-page">
+            <div className="utility-section-head utility-page-intro">
+              <div>
+                <strong>{t('自动化巡检')}</strong>
+                <span>{t('管理巡检设备，后续可批量执行命令。')}</span>
+              </div>
+              <button className="utility-primary-button compact" type="button" onClick={() => openInspectEditor()}>
+                <Plus size={14} />
+                {t('添加设备')}
+              </button>
+            </div>
+
+            {inspectEditorOpen && (
+              <div className="inspect-editor">
+                <div className="inspect-editor-grid">
+                  <label className="utility-command-field">
+                    <span>{t('设备名称')}</span>
+                    <input
+                      value={inspectDraft.name}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, name: event.target.value }))}
+                      placeholder={t('如：核心交换机-01')}
+                    />
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('IP地址')}</span>
+                    <input
+                      value={inspectDraft.host}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, host: event.target.value }))}
+                      placeholder={t('如：192.168.1.1')}
+                    />
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('端口')}</span>
+                    <input
+                      type="number"
+                      value={inspectDraft.port}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, port: Number(event.target.value) || 22 }))}
+                    />
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('厂商类型')}</span>
+                    <select
+                      value={inspectDraft.vendor}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, vendor: event.target.value }))}
+                    >
+                      {INSPECT_VENDORS.map((v) => (
+                        <option key={v} value={v}>
+                          {t(`厂商.${v}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('用户名')}</span>
+                    <input
+                      value={inspectDraft.username}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, username: event.target.value }))}
+                      placeholder={t('如：admin')}
+                    />
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('密码')}</span>
+                    <input
+                      type="password"
+                      value={inspectDraft.password}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, password: event.target.value }))}
+                      placeholder="••••••"
+                    />
+                  </label>
+                  <label className="utility-command-field inspect-remark-field">
+                    <span>{t('备注')}</span>
+                    <input
+                      value={inspectDraft.remark}
+                      onChange={(event) => setInspectDraft((d) => ({ ...d, remark: event.target.value }))}
+                      placeholder={t('可选')}
+                    />
+                  </label>
+                </div>
+                <div className="inspect-editor-actions">
+                  <button className="utility-text-button" type="button" onClick={() => setInspectEditorOpen(false)}>
+                    {t('取消')}
+                  </button>
+                  <button className="utility-primary-button compact" type="button" onClick={saveInspectDevice} disabled={!inspectDraft.name.trim() || !inspectDraft.host.trim()}>
+                    <Save size={14} />
+                    {inspectEditingId ? t('保存修改') : t('保存设备')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="inspect-device-list">
+              {inspectDevices.length === 0 && (
+                <div className="utility-empty">
+                  <Activity size={18} />
+                  <strong>{t('还没有巡检设备')}</strong>
+                  <span>{t('点击"添加设备"录入你的服务器或网络设备。')}</span>
+                </div>
+              )}
+              {inspectDevices.map((device) => (
+                <div className="inspect-device-item" key={device.id}>
+                  <div className="inspect-device-main">
+                    <div className="inspect-device-title">
+                      <strong>{device.name}</strong>
+                      <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{t(`厂商.${device.vendor}`)}</em>
+                    </div>
+                    <div className="inspect-device-meta">
+                      <span>{device.host}:{device.port}</span>
+                      {device.username && <span>{device.username}</span>}
+                      {device.remark && <span>{device.remark}</span>}
+                    </div>
+                  </div>
+                  <div className="inspect-device-actions">
+                    <IconButton label={t('编辑设备')} onClick={() => openInspectEditor(device)}>
+                      <Edit3 size={14} />
+                    </IconButton>
+                    <IconButton label={t('删除设备')} onClick={() => confirmDeleteInspectDevice(device)}>
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
                 </div>
               ))}
             </div>
@@ -13110,8 +13342,7 @@ function usePersistentSnippetCategories() {
   return [categories, setCategories] as const
 }
 
-function usePersistentSessionNotes() {
-  const [notes, setNotes] = useState<SessionNote[]>(() => {
+function usePersistentSessionNotes() {  const [notes, setNotes] = useState<SessionNote[]>(() => {
     try {
       const raw = localStorage.getItem('xundu.sessionNotes')
       if (!raw) return []
@@ -13130,6 +13361,44 @@ function usePersistentSessionNotes() {
   }, [notes])
 
   return [notes, setNotes] as const
+}
+
+function normalizeInspectDevice(device: unknown): InspectDevice | null {
+  if (!device || typeof device !== 'object') return null
+  const d = device as Record<string, unknown>
+  if (typeof d.id !== 'string' || typeof d.name !== 'string' || typeof d.host !== 'string') return null
+  return {
+    id: d.id,
+    name: d.name,
+    host: d.host,
+    port: typeof d.port === 'number' && d.port > 0 ? Math.floor(d.port) : 22,
+    username: typeof d.username === 'string' ? d.username : '',
+    password: typeof d.password === 'string' ? d.password : '',
+    vendor: typeof d.vendor === 'string' ? d.vendor : 'linux',
+    remark: typeof d.remark === 'string' ? d.remark : '',
+  }
+}
+
+function usePersistentInspectDevices() {
+  const [devices, setDevices] = useState<InspectDevice[]>(() => {
+    try {
+      const raw = localStorage.getItem('rain.inspectDevices')
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map((d) => normalizeInspectDevice(d))
+        .filter((d): d is InspectDevice => Boolean(d))
+    } catch {
+      return []
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('rain.inspectDevices', JSON.stringify(devices))
+  }, [devices])
+
+  return [devices, setDevices] as const
 }
 
 function usePersistentAppAppearance() {
