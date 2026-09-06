@@ -89,7 +89,7 @@ pub fn batch_execute_inspect(
     if total == 0 {
         return Vec::new();
     }
-    let workers = (concurrency.clamp(1, 10) as usize).min(total);
+    let workers = (concurrency.clamp(1, 200) as usize).min(total);
     let results: Mutex<Vec<Option<InspectExecResult>>> = Mutex::new(vec![None; total]);
     let next_index = AtomicUsize::new(0);
     let done_count = AtomicUsize::new(0);

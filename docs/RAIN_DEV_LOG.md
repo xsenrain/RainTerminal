@@ -233,3 +233,13 @@
   - tauriBridge.ts：移除 inspect_reset_all mock
 - **验证**：cargo check（无警告）+ npm run build 通过
 - **commit**：待提交
+
+## 2026-09-07 · 巡检并发数改为前端可控（后端仅保留兜底上限）
+
+- **背景**：用户要求并发数不被后端锁死，由前端自行控制
+- **改动**：
+  - 前端（App.tsx）：并发输入框范围 1-10 → 1-200（两处：旧抽屉分支与新全页工作台，同步修改）
+  - 后端（batch_inspect.rs）：concurrency.clamp(1, 10) → clamp(1, 200)，仅作防呆兜底，不再限制用户
+  - 实际并发数 = min(前端设置值, 设备总数)
+- **验证**：cargo check（无警告）+ npm run build 通过
+- **commit**：待提交

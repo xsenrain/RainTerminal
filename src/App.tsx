@@ -10916,9 +10916,9 @@ function InspectWorkspace({
               <input
                 type="number"
                 min={1}
-                max={10}
+                max={200}
                 value={inspectConcurrency}
-                onChange={(event) => setInspectConcurrency(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
+                onChange={(event) => setInspectConcurrency(Math.min(200, Math.max(1, Number(event.target.value) || 1)))}
               />
             </label>
             <button
