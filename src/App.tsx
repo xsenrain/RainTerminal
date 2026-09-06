@@ -9215,6 +9215,13 @@ function Inspector({
   return (
     <aside className="inspector utility-panel">
       <section className="utility-stage">
+        {categoryNotice && (
+          <div className="snippet-float-notice-wrapper">
+            <div className={`snippet-float-notice ${categoryNotice.type}`}>
+              {categoryNotice.text}
+            </div>
+          </div>
+        )}
         {activeTab === 'run' && (
           <div className="utility-page utility-run-page">
             <div className="utility-target">
@@ -9509,13 +9516,6 @@ function Inspector({
                   </IconButton>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-        {categoryNotice && (
-          <div className="snippet-float-notice-wrapper">
-            <div className={`snippet-float-notice ${categoryNotice.type}`}>
-              {categoryNotice.text}
             </div>
           </div>
         )}
