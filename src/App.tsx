@@ -989,6 +989,7 @@ function App() {
   const [activePanel, setActivePanel] = useState<DockPanel>(null)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('run')
   const [toast, setToast] = useState('')
+  const [categoryToast, setCategoryToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
   const [activeConnectedServerId, setActiveConnectedServerId] = useState<string | null>(null)
   const [serverConnectionStates, setServerConnectionStates] = useState<Record<string, ConnectionState>>({})
@@ -1132,6 +1133,12 @@ function App() {
     const timer = window.setTimeout(() => setToast(''), 3200)
     return () => window.clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    if (!categoryToast) return
+    const timer = window.setTimeout(() => setCategoryToast(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [categoryToast])
 
   useEffect(() => {
     void getCredentialVaultStatus()
@@ -2239,19 +2246,19 @@ function App() {
     const trimmed = name.trim()
     if (!trimmed) return
     if (snippetCategories.includes(trimmed)) {
-      setToast(`分类「${trimmed}」已存在`)
+      setCategoryToast({ type: 'error', text: `分类「${trimmed}」已存在` })
       return
     }
     setSnippetCategories((current) => {
       const withoutUncategorized = current.filter((c) => c !== '未分类')
       return [...withoutUncategorized, trimmed, '未分类']
     })
-    setToast(`分类「${trimmed}」新增成功`)
+    setCategoryToast({ type: 'success', text: `分类「${trimmed}」新增成功` })
   }
 
   function deleteCategory(name: string) {
     if (name === '未分类') {
-      setToast('「未分类」是默认分类，不可删除')
+      setCategoryToast({ type: 'error', text: '「未分类」是默认分类，不可删除' })
       return
     }
     const commandCount = snippets.filter((s) => s.category === name).length
@@ -2261,7 +2268,7 @@ function App() {
     }
     setSnippetCategories((current) => current.filter((c) => c !== name))
     setSnippets((current) => current.filter((s) => s.category !== name))
-    setToast(`分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}`)
+    setCategoryToast({ type: 'success', text: `分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}` })
   }
 
   function moveSnippet(id: string, category: string) {
@@ -2632,6 +2639,12 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {categoryToast && (
+        <div className={`app-category-toast ${categoryToast.type}`}>
+          {categoryToast.text}
+        </div>
+      )}
 
       {contextMenu && <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />}
 

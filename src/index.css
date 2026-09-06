@@ -4342,6 +4342,40 @@ body:has(.app-toast) .file-download-progress {
   border-radius: var(--r-sm);
 }
 
+/* Category operation toast — top-center, fixed, highest z-index */
+.app-category-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  animation: category-toast-in 0.2s ease-out;
+  pointer-events: none;
+}
+
+.app-category-toast.success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.app-category-toast.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+@keyframes category-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .snippet-float-notice.success {
   background: var(--success-bg);
   color: var(--success);
