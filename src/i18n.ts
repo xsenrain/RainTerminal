@@ -17,6 +17,7 @@ const englishUi: Record<string, string> = {
   '移动到分类': 'Move to category',
   '输入新分类名称': 'Enter new category name',
   '删除分类': 'Delete category',
+  '暂无命令，右键其他命令可移动到此分类': 'No commands yet. Right-click other commands to move here.',
   '刷新进程': 'Refresh processes',
   '暂无进程': 'No processes found',
   '排序': 'Sort',

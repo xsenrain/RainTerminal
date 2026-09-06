@@ -9171,10 +9171,11 @@ function Inspector({
 
   function saveCategory() {
     if (!newCategoryName.trim()) return
-    onAddCategory(newCategoryName.trim())
-    setSnippetCategory(newCategoryName.trim())
+    const name = newCategoryName.trim()
+    onAddCategory(name)
+    setSnippetCategory(name)
+    setExpandedCategories((prev) => new Set(prev).add(name))
     setNewCategoryName('')
-    setCategoryEditorOpen(false)
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9257,7 +9258,7 @@ function Inspector({
             if (!groups.has(c)) groups.set(c, [])
             groups.get(c)!.push(s)
           }
-          const visibleGroups = [...groups.entries()].filter(([, list]) => list.length > 0)
+          const visibleGroups = [...groups.entries()]
           const toggleCategory = (cat: string) =>
             setExpandedCategories((prev) => {
               const next = new Set(prev)
@@ -9365,6 +9366,11 @@ function Inspector({
                     </div>
                     {isExpanded && (
                       <div className="snippet-list">
+                        {list.length === 0 && (
+                          <div className="snippet-empty-hint">
+                            {t('暂无命令，右键其他命令可移动到此分类')}
+                          </div>
+                        )}
                         {list.map((snippet) => (
                           <div className="snippet-item" key={snippet.id} onContextMenu={(event) => openContextMenu(event, snippet.id)}>
                             <button type="button" onClick={() => prepareCommand(snippet.command)} title={t('使用此命令')}>
