@@ -120,3 +120,21 @@
 - **说明**：本步仅设备管理（规划第 1 步），批量执行命令在下一步实现
 - **验证**：`npm run build` 通过（无 TS 错误）
 - **commit**：`e9ed17f`
+
+---
+
+## 2026-09-06 · 阶段 2：批量命令执行引擎（后端 + 前端）
+
+- **改动文件**：`src-tauri/src/batch_inspect.rs`（新增）、`src-tauri/src/lib.rs`（mod/command 注册/pub(crate)）、`src/App.tsx`（inspect 分支扩展）、`src/i18n.ts`（文案）、`src/index.css`（样式）、`src/tauriBridge.ts`（sandbox mock）
+- **改动内容**：
+  - 后端新增 `batch_inspect.rs`：非交互式 SSH 批量执行引擎
+    - `batch_execute_inspect` command：设备列表 + 命令列表 → 逐设备串行执行
+    - 复用 `connect_interactive_ssh_session`（密码/密钥/agent 认证），认证后 set_timeout(800ms) 作为静默期
+    - Linux：read EOF 判定命令结束；网络设备：静默期判定 + `---- More ----`/`--More--` 分页自动翻页
+    - 错误标记检测：`% Unrecognized command` / `command not found` 等 → success=false
+    - 单条命令输出上限 512KB 防内存膨胀
+  - 前端 inspect 分支新增：设备勾选（全选/取消全选）、多行命令输入、执行按钮（显示选中数）、结果区（每设备结果卡片 + 命令输出折叠展示）
+  - sandbox mock 支持 `batch_execute_inspect`（返回模拟结果，方便无设备时验证 UI）
+- **说明**：当前串行执行（MVP），并发在后续阶段加入；凭据仍从 localStorage 读取（明文），后续迁移 Credential Manager
+- **验证**：`npm run build` 通过；后端编译因 app.exe 被 Defender 临时锁定待重试
+- **commit**：待提交

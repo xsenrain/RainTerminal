@@ -1,6 +1,8 @@
+mod batch_inspect;
 mod credential_store;
 mod iron_rdp;
 
+use batch_inspect::batch_execute_inspect;
 use credential_store::{
     credential_delete_many, credential_get_many, credential_store_many, credential_vault_status,
 };
@@ -5517,7 +5519,7 @@ fn ssh_output_reports_authentication_failure(output: &str) -> bool {
         || normalized.contains("too many authentication failures")
 }
 
-fn connect_interactive_ssh_session(
+pub(crate) fn connect_interactive_ssh_session(
     host: &str,
     user: &str,
     password: &str,
@@ -7353,7 +7355,8 @@ pub fn run() {
             ssh_execute_command,
             ssh_tunnel_start,
             ssh_tunnel_stop,
-            ssh_tunnel_list
+            ssh_tunnel_list,
+            batch_execute_inspect
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

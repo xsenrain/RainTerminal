@@ -253,6 +253,21 @@ type InspectDevice = {
 
 const INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other'] as const
 
+type InspectCommandOutput = {
+  command: string
+  output: string
+  success: boolean
+}
+
+type InspectExecResult = {
+  deviceName: string
+  host: string
+  success: boolean
+  error?: string | null
+  outputs: InspectCommandOutput[]
+  durationMs: number
+}
+
 type DockPanel = 'servers' | 'local' | InspectorTab | null
 
 type GlobalSearchEntry = {
@@ -9203,6 +9218,10 @@ function Inspector({
     vendor: 'linux',
     remark: '',
   })
+  const [selectedInspectIds, setSelectedInspectIds] = useState<Set<string>>(new Set())
+  const [inspectCommandText, setInspectCommandText] = useState('')
+  const [inspectRunning, setInspectRunning] = useState(false)
+  const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
 
   useEffect(() => {
     if (!contextMenu && !groupContextMenu) return
@@ -9302,6 +9321,61 @@ function Inspector({
     const confirmed = window.confirm(`删除设备「${device.name}」？`)
     if (!confirmed) return
     onDeleteInspectDevice(device.id)
+  }
+
+  async function runInspectBatch() {
+    const selectedDevices = inspectDevices.filter((d) => selectedInspectIds.has(d.id))
+    const commandLines = inspectCommandText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (selectedDevices.length === 0 || commandLines.length === 0) return
+
+    setInspectRunning(true)
+    setInspectResults(null)
+    try {
+      const results = await invoke<InspectExecResult[]>('batch_execute_inspect', {
+        devices: selectedDevices.map((d) => ({
+          name: d.name,
+          host: d.host,
+          port: d.port,
+          username: d.username,
+          password: d.password,
+          vendor: d.vendor,
+        })),
+        commands: commandLines.map((command, index) => ({
+          name: `命令${index + 1}`,
+          command,
+        })),
+      })
+      setInspectResults(results)
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setInspectResults([
+        {
+          deviceName: t('执行失败'),
+          host: '',
+          success: false,
+          error: message,
+          outputs: [],
+          durationMs: 0,
+        },
+      ])
+    } finally {
+      setInspectRunning(false)
+    }
+  }
+
+  function toggleInspectDevice(id: string) {
+    setSelectedInspectIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9752,6 +9826,13 @@ function Inspector({
               )}
               {inspectDevices.map((device) => (
                 <div className="inspect-device-item" key={device.id}>
+                  <label className="inspect-device-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedInspectIds.has(device.id)}
+                      onChange={() => toggleInspectDevice(device.id)}
+                    />
+                  </label>
                   <div className="inspect-device-main">
                     <div className="inspect-device-title">
                       <strong>{device.name}</strong>
@@ -9773,6 +9854,84 @@ function Inspector({
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="inspect-exec-section">
+              <div className="utility-section-head">
+                <div>
+                  <strong>{t('批量执行')}</strong>
+                  <span>{t('勾选设备，每行一条命令。')}</span>
+                </div>
+                {inspectDevices.length > 0 && (
+                  <button
+                    className="utility-text-button"
+                    type="button"
+                    onClick={() =>
+                      setSelectedInspectIds(
+                        selectedInspectIds.size === inspectDevices.length
+                          ? new Set()
+                          : new Set(inspectDevices.map((d) => d.id)),
+                      )
+                    }
+                  >
+                    {selectedInspectIds.size === inspectDevices.length ? t('取消全选') : t('全选')}
+                  </button>
+                )}
+              </div>
+              <label className="utility-command-field">
+                <span>{t('命令列表')}</span>
+                <textarea
+                  className="inspect-command-input"
+                  value={inspectCommandText}
+                  onChange={(event) => setInspectCommandText(event.target.value)}
+                  placeholder={t('每行一条命令，如：\ndisplay version\ndisplay interface brief')}
+                  rows={3}
+                />
+              </label>
+              <button
+                className="utility-primary-button"
+                type="button"
+                onClick={runInspectBatch}
+                disabled={inspectRunning || selectedInspectIds.size === 0 || !inspectCommandText.trim()}
+              >
+                <Activity size={14} />
+                {inspectRunning ? t('执行中…') : `${t('执行')} (${selectedInspectIds.size})`}
+              </button>
+
+              {inspectResults && (
+                <div className="inspect-results">
+                  <div className="inspect-results-summary">
+                    <strong>
+                      {t('完成')}：{inspectResults.filter((r) => r.success).length}/{inspectResults.length}
+                    </strong>
+                    <span>
+                      {inspectResults.filter((r) => !r.success).length > 0
+                        ? `${t('失败')}：${inspectResults.filter((r) => !r.success).length}`
+                        : t('全部成功')}
+                    </span>
+                  </div>
+                  {inspectResults.map((result) => (
+                    <div className={`inspect-result-item ${result.success ? 'ok' : 'fail'}`} key={`${result.host}-${result.deviceName}`}>
+                      <div className="inspect-result-header">
+                        <span className={`inspect-result-dot ${result.success ? 'ok' : 'fail'}`} />
+                        <strong>{result.deviceName}</strong>
+                        <em>{result.host}</em>
+                        <span className="inspect-result-time">{(result.durationMs / 1000).toFixed(1)}s</span>
+                      </div>
+                      {!result.success && result.error && <div className="inspect-result-error">{result.error}</div>}
+                      {result.outputs.map((output, index) => (
+                        <details className="inspect-command-output" key={index} open={!output.success}>
+                          <summary>
+                            <span className={`inspect-result-dot ${output.success ? 'ok' : 'fail'}`} />
+                            {output.command}
+                          </summary>
+                          <pre>{output.output || t('（无输出）')}</pre>
+                        </details>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

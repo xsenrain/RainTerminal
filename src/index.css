@@ -6115,3 +6115,148 @@ body.native-window-drag-active .monitor-tabs button {
   gap: 2px;
   flex-shrink: 0;
 }
+
+/* ============ 巡检批量执行 ============ */
+.inspect-device-check {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inspect-device-check input {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.inspect-exec-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.inspect-command-input {
+  min-height: 64px;
+  resize: vertical;
+  font-family: var(--mono-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.inspect-results {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspect-results-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.inspect-results-summary strong {
+  color: var(--text-primary);
+}
+
+.inspect-results-summary span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.inspect-result-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.inspect-result-item.ok { border-left: 3px solid var(--success); }
+.inspect-result-item.fail { border-left: 3px solid var(--danger); }
+
+.inspect-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface-2);
+}
+
+.inspect-result-header strong {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.inspect-result-header em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.inspect-result-time {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.inspect-result-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.inspect-result-dot.ok { background: var(--success); }
+.inspect-result-dot.fail { background: var(--danger); }
+
+.inspect-result-error {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.inspect-command-output {
+  border-top: 1px solid var(--border);
+}
+
+.inspect-command-output summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.inspect-command-output summary::-webkit-details-marker { display: none; }
+
+.inspect-command-output summary::before {
+  content: '▸';
+  font-size: 9px;
+  color: var(--text-tertiary);
+  transition: transform var(--t-fast);
+}
+
+.inspect-command-output[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.inspect-command-output pre {
+  margin: 0;
+  padding: 8px 12px 10px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--mono-font, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--surface-1);
+}

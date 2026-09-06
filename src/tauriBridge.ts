@@ -176,6 +176,28 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
     case 'local_shell_resize':
     case 'ssh_resize':
       return undefined as T
+    case 'batch_execute_inspect': {
+      const devices = Array.isArray(args.devices) ? args.devices : []
+      const commands = Array.isArray(args.commands) ? args.commands : []
+      return devices.map((device) => {
+        const dev = device as { name?: unknown; host?: unknown }
+        return {
+          deviceName: String(dev.name ?? ''),
+          host: String(dev.host ?? ''),
+          success: true,
+          error: null,
+          durationMs: 1200,
+          outputs: commands.map((command, index) => {
+            const cmd = command as { name?: unknown; command?: unknown }
+            return {
+              command: String(cmd.name ?? `命令${index + 1}`),
+              output: `[模拟输出] ${String(cmd.command ?? '')}\n命令执行成功，返回示例结果。`,
+              success: true,
+            }
+          }),
+        }
+      }) as T
+    }
     case 'check_app_update': {
       const available = Boolean((window as typeof window & { __XUNDU_SANDBOX_UPDATE_AVAILABLE__?: boolean }).__XUNDU_SANDBOX_UPDATE_AVAILABLE__)
       return available
