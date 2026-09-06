@@ -86,3 +86,19 @@
 - **改动文件**：`src/index.css`
 - **验证**：`npm run build` 通过
 - **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
+
+---
+
+## 2026-09-06 · 阶段 1 修复：新建分类后空分组不可见
+
+- **BUG 根因**：
+  - `visibleGroups` 过滤了空分组（`list.length > 0`），新建分类下无命令，导致命令列表里不显示新分类，用户感知不到添加成功
+  - `saveCategory` 添加后自动关闭分类管理面板（`setCategoryEditorOpen(false)`），且无空态提示
+- **修复**：
+  - 去掉空分组过滤，所有分类（包括空的）都显示在命令列表中
+  - 新建分类后自动展开该分类（`setExpandedCategories`）
+  - 分类管理面板添加后不自动关闭，方便连续添加
+  - 空分组展开后显示提示「暂无命令，右键其他命令可移动到此分类」
+- **改动文件**：`src/App.tsx`、`src/i18n.ts`、`src/index.css`
+- **验证**：`npm run build` 通过；已启动 `npm run desktop:dev` 供用户手动验证（GUI 自动化工具初始化失败，未能自动截图）
+- **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
