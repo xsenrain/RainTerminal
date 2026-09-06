@@ -1006,6 +1006,13 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<DockPanel>(null)
   const [mainView, setMainView] = useState<'workbench' | 'inspect'>('workbench')
+  // 巡检工作台持久状态（跨视图切换保留）
+  const [inspectSelectedIds, setInspectSelectedIds] = useState<Set<string>>(new Set())
+  const [inspectCommands, setInspectCommands] = useState<{ id: string; name: string; command: string }[]>([])
+  const [inspectRunning, setInspectRunning] = useState(false)
+  const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
+  const [inspectConcurrency, setInspectConcurrency] = useState(5)
+  const [inspectProgress, setInspectProgress] = useState<{ current: number; total: number } | null>(null)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('run')
   const [toast, setToast] = useState('')
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
@@ -1272,6 +1279,18 @@ function App() {
       })
     }
   }, [selectedServerId, sessionId])
+
+  useEffect(() => {
+    const unlistenTask = listen<{ current: number; total: number; deviceName: string }>(
+      'inspect-progress',
+      (event) => {
+        setInspectProgress({ current: event.payload.current, total: event.payload.total })
+      },
+    ).catch(() => () => undefined)
+    return () => {
+      void unlistenTask.then((unlisten) => unlisten())
+    }
+  }, [])
 
   useEffect(() => {
     function suppressNativeContextMenu(event: globalThis.MouseEvent) {
@@ -2653,6 +2672,18 @@ function App() {
             onDeleteInspectDevice={deleteInspectDevice}
             onNotify={(message) => setToast(message)}
             snippets={snippets}
+            selectedInspectIds={inspectSelectedIds}
+            setSelectedInspectIds={setInspectSelectedIds}
+            inspectCommands={inspectCommands}
+            setInspectCommands={setInspectCommands}
+            inspectRunning={inspectRunning}
+            setInspectRunning={setInspectRunning}
+            inspectResults={inspectResults}
+            setInspectResults={setInspectResults}
+            inspectConcurrency={inspectConcurrency}
+            setInspectConcurrency={setInspectConcurrency}
+            inspectProgress={inspectProgress}
+            setInspectProgress={setInspectProgress}
           />
         ) : (
         <Profiler id="Workbench" onRender={handleRenderProfile}>
@@ -10302,6 +10333,18 @@ function InspectWorkspace({
   onDeleteInspectDevice,
   onNotify,
   snippets,
+  selectedInspectIds,
+  setSelectedInspectIds,
+  inspectCommands,
+  setInspectCommands,
+  inspectRunning,
+  setInspectRunning,
+  inspectResults,
+  setInspectResults,
+  inspectConcurrency,
+  setInspectConcurrency,
+  inspectProgress,
+  setInspectProgress,
 }: {
   inspectDevices: InspectDevice[]
   onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
@@ -10309,6 +10352,18 @@ function InspectWorkspace({
   onDeleteInspectDevice: (id: string) => void
   onNotify: (message: string) => void
   snippets: Snippet[]
+  selectedInspectIds: Set<string>
+  setSelectedInspectIds: (value: Set<string> | ((current: Set<string>) => Set<string>)) => void
+  inspectCommands: { id: string; name: string; command: string }[]
+  setInspectCommands: (value: { id: string; name: string; command: string }[] | ((current: { id: string; name: string; command: string }[]) => { id: string; name: string; command: string }[])) => void
+  inspectRunning: boolean
+  setInspectRunning: (value: boolean) => void
+  inspectResults: InspectExecResult[] | null
+  setInspectResults: (value: InspectExecResult[] | null | ((current: InspectExecResult[] | null) => InspectExecResult[] | null)) => void
+  inspectConcurrency: number
+  setInspectConcurrency: (value: number) => void
+  inspectProgress: { current: number; total: number } | null
+  setInspectProgress: (value: { current: number; total: number } | null) => void
 }) {
   const { t } = useAppLocale()
   const [inspectEditingId, setInspectEditingId] = useState<string | null>(null)
@@ -10322,27 +10377,9 @@ function InspectWorkspace({
     vendor: 'linux',
     remark: '',
   })
-  const [selectedInspectIds, setSelectedInspectIds] = useState<Set<string>>(new Set())
-  const [inspectCommands, setInspectCommands] = useState<{ id: string; name: string; command: string }[]>([])
   const [inspectManualCommand, setInspectManualCommand] = useState('')
   const [inspectTemplatePickerOpen, setInspectTemplatePickerOpen] = useState(false)
   const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
-  const [inspectRunning, setInspectRunning] = useState(false)
-  const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
-  const [inspectConcurrency, setInspectConcurrency] = useState(5)
-  const [inspectProgress, setInspectProgress] = useState<{ current: number; total: number } | null>(null)
-
-  useEffect(() => {
-    const unlistenTask = listen<{ current: number; total: number; deviceName: string }>(
-      'inspect-progress',
-      (event) => {
-        setInspectProgress({ current: event.payload.current, total: event.payload.total })
-      },
-    ).catch(() => () => undefined)
-    return () => {
-      void unlistenTask.then((unlisten) => unlisten())
-    }
-  }, [])
 
   function openInspectEditor(device?: InspectDevice) {
     if (device) {

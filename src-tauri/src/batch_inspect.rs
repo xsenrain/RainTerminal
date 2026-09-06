@@ -298,52 +298,53 @@ struct InspectRule {
     severity: &'static str,           // "warn" | "critical"
     keyword: Option<&'static str>,    // 输出包含该关键字 → 命中
     missing_keyword: Option<&'static str>, // 输出不包含该关键字 → 命中
-    threshold: Option<u64>,           // 输出中最大数字 ≥ 阈值 → 命中（百分比/负载等）
+    threshold: Option<f64>,           // 数值阈值 → 命中
+    percent: bool,                    // true=只取"NN%"格式的最大值；false=取输出中最大数值（含小数）
     label: &'static str,              // 命中原因（中文）
 }
 
 /// 预设规则库：按厂商 + 命令内容子串匹配。
 const DEFAULT_INSPECT_RULES: &[InspectRule] = &[
     // ---- Linux ----
-    InspectRule { vendor: "linux", command_contains: "df", severity: "critical", keyword: Some("100%"), missing_keyword: None, threshold: None, label: "磁盘使用率已达 100%" },
-    InspectRule { vendor: "linux", command_contains: "df", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(90), label: "磁盘使用率 ≥ 90%" },
-    InspectRule { vendor: "linux", command_contains: "load", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(4), label: "系统负载 ≥ 4" },
-    InspectRule { vendor: "linux", command_contains: "load", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(8), label: "系统负载 ≥ 8" },
-    InspectRule { vendor: "linux", command_contains: "ping", severity: "critical", keyword: Some("100% packet loss"), missing_keyword: None, threshold: None, label: "ping 丢包率 100%" },
-    InspectRule { vendor: "linux", command_contains: "systemctl", severity: "warn", keyword: Some("failed"), missing_keyword: None, threshold: None, label: "存在 failed 状态的系统单元" },
-    InspectRule { vendor: "linux", command_contains: "journalctl", severity: "warn", keyword: Some("error"), missing_keyword: None, threshold: None, label: "日志中存在 error" },
+    InspectRule { vendor: "linux", command_contains: "df", severity: "critical", keyword: Some("100%"), missing_keyword: None, threshold: None, percent: false, label: "磁盘使用率已达 100%" },
+    InspectRule { vendor: "linux", command_contains: "df", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "磁盘使用率 ≥ 90%" },
+    InspectRule { vendor: "linux", command_contains: "load", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(4.0), percent: false, label: "系统负载 ≥ 4" },
+    InspectRule { vendor: "linux", command_contains: "load", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(8.0), percent: false, label: "系统负载 ≥ 8" },
+    InspectRule { vendor: "linux", command_contains: "ping", severity: "critical", keyword: Some("100% packet loss"), missing_keyword: None, threshold: None, percent: false, label: "ping 丢包率 100%" },
+    InspectRule { vendor: "linux", command_contains: "systemctl", severity: "warn", keyword: Some("failed"), missing_keyword: None, threshold: None, percent: false, label: "存在 failed 状态的系统单元" },
+    InspectRule { vendor: "linux", command_contains: "journalctl", severity: "warn", keyword: Some("error"), missing_keyword: None, threshold: None, percent: false, label: "日志中存在 error" },
     // ---- 华为 ----
-    InspectRule { vendor: "huawei", command_contains: "display device", severity: "critical", keyword: Some("abnormal"), missing_keyword: None, threshold: None, label: "板卡存在 Abnormal 状态" },
-    InspectRule { vendor: "huawei", command_contains: "display device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "板卡存在 Fault 状态" },
-    InspectRule { vendor: "huawei", command_contains: "display alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, label: "存在活动告警" },
-    InspectRule { vendor: "huawei", command_contains: "display interface brief", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, label: "存在 DOWN 接口" },
-    InspectRule { vendor: "huawei", command_contains: "display cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70), label: "CPU 使用率 ≥ 70%" },
-    InspectRule { vendor: "huawei", command_contains: "display cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "CPU 使用率 ≥ 90%" },
-    InspectRule { vendor: "huawei", command_contains: "display memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "内存使用率 ≥ 90%" },
-    InspectRule { vendor: "huawei", command_contains: "display temperature", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70), label: "温度 ≥ 70℃" },
-    InspectRule { vendor: "huawei", command_contains: "display health", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "健康检查存在 Fault" },
+    InspectRule { vendor: "huawei", command_contains: "display device", severity: "critical", keyword: Some("abnormal"), missing_keyword: None, threshold: None, percent: false, label: "板卡存在 Abnormal 状态" },
+    InspectRule { vendor: "huawei", command_contains: "display device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "板卡存在 Fault 状态" },
+    InspectRule { vendor: "huawei", command_contains: "display alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, percent: false, label: "存在活动告警" },
+    InspectRule { vendor: "huawei", command_contains: "display interface brief", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, percent: false, label: "存在 DOWN 接口" },
+    InspectRule { vendor: "huawei", command_contains: "display cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70.0), percent: true, label: "CPU 使用率 ≥ 70%" },
+    InspectRule { vendor: "huawei", command_contains: "display cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "CPU 使用率 ≥ 90%" },
+    InspectRule { vendor: "huawei", command_contains: "display memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "内存使用率 ≥ 90%" },
+    InspectRule { vendor: "huawei", command_contains: "display temperature", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70.0), percent: false, label: "温度 ≥ 70℃" },
+    InspectRule { vendor: "huawei", command_contains: "display health", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "健康检查存在 Fault" },
     // ---- 华三 ----
-    InspectRule { vendor: "h3c", command_contains: "display device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "板卡存在 Fault 状态" },
-    InspectRule { vendor: "h3c", command_contains: "display alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, label: "存在活动告警" },
-    InspectRule { vendor: "h3c", command_contains: "display interface brief", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, label: "存在 DOWN 接口" },
-    InspectRule { vendor: "h3c", command_contains: "display cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70), label: "CPU 使用率 ≥ 70%" },
-    InspectRule { vendor: "h3c", command_contains: "display cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "CPU 使用率 ≥ 90%" },
-    InspectRule { vendor: "h3c", command_contains: "display memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "内存使用率 ≥ 90%" },
-    InspectRule { vendor: "h3c", command_contains: "display environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "环境监控存在 Fault" },
+    InspectRule { vendor: "h3c", command_contains: "display device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "板卡存在 Fault 状态" },
+    InspectRule { vendor: "h3c", command_contains: "display alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, percent: false, label: "存在活动告警" },
+    InspectRule { vendor: "h3c", command_contains: "display interface brief", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, percent: false, label: "存在 DOWN 接口" },
+    InspectRule { vendor: "h3c", command_contains: "display cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70.0), percent: true, label: "CPU 使用率 ≥ 70%" },
+    InspectRule { vendor: "h3c", command_contains: "display cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "CPU 使用率 ≥ 90%" },
+    InspectRule { vendor: "h3c", command_contains: "display memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "内存使用率 ≥ 90%" },
+    InspectRule { vendor: "h3c", command_contains: "display environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "环境监控存在 Fault" },
     // ---- 锐捷 ----
-    InspectRule { vendor: "ruijie", command_contains: "show device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "板卡存在 Fault 状态" },
-    InspectRule { vendor: "ruijie", command_contains: "show alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, label: "存在活动告警" },
-    InspectRule { vendor: "ruijie", command_contains: "show interface", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, label: "存在 DOWN 接口" },
-    InspectRule { vendor: "ruijie", command_contains: "show cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70), label: "CPU 使用率 ≥ 70%" },
-    InspectRule { vendor: "ruijie", command_contains: "show cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "CPU 使用率 ≥ 90%" },
-    InspectRule { vendor: "ruijie", command_contains: "show memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "内存使用率 ≥ 90%" },
-    InspectRule { vendor: "ruijie", command_contains: "show environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "环境监控存在 Fault" },
+    InspectRule { vendor: "ruijie", command_contains: "show device", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "板卡存在 Fault 状态" },
+    InspectRule { vendor: "ruijie", command_contains: "show alarm", severity: "warn", keyword: Some("alarm"), missing_keyword: None, threshold: None, percent: false, label: "存在活动告警" },
+    InspectRule { vendor: "ruijie", command_contains: "show interface", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, percent: false, label: "存在 DOWN 接口" },
+    InspectRule { vendor: "ruijie", command_contains: "show cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70.0), percent: true, label: "CPU 使用率 ≥ 70%" },
+    InspectRule { vendor: "ruijie", command_contains: "show cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "CPU 使用率 ≥ 90%" },
+    InspectRule { vendor: "ruijie", command_contains: "show memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "内存使用率 ≥ 90%" },
+    InspectRule { vendor: "ruijie", command_contains: "show environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "环境监控存在 Fault" },
     // ---- 中兴 ----
-    InspectRule { vendor: "zte", command_contains: "show environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, label: "环境监控存在 Fault" },
-    InspectRule { vendor: "zte", command_contains: "show interface", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, label: "存在 DOWN 接口" },
-    InspectRule { vendor: "zte", command_contains: "show cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70), label: "CPU 使用率 ≥ 70%" },
-    InspectRule { vendor: "zte", command_contains: "show cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "CPU 使用率 ≥ 90%" },
-    InspectRule { vendor: "zte", command_contains: "show memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90), label: "内存使用率 ≥ 90%" },
+    InspectRule { vendor: "zte", command_contains: "show environment", severity: "critical", keyword: Some("fault"), missing_keyword: None, threshold: None, percent: false, label: "环境监控存在 Fault" },
+    InspectRule { vendor: "zte", command_contains: "show interface", severity: "warn", keyword: Some("down"), missing_keyword: None, threshold: None, percent: false, label: "存在 DOWN 接口" },
+    InspectRule { vendor: "zte", command_contains: "show cpu", severity: "warn", keyword: None, missing_keyword: None, threshold: Some(70.0), percent: true, label: "CPU 使用率 ≥ 70%" },
+    InspectRule { vendor: "zte", command_contains: "show cpu", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "CPU 使用率 ≥ 90%" },
+    InspectRule { vendor: "zte", command_contains: "show memory", severity: "critical", keyword: None, missing_keyword: None, threshold: Some(90.0), percent: true, label: "内存使用率 ≥ 90%" },
 ];
 
 /// 对单个命令输出执行故障判断，返回（健康等级, 命中原因列表）。
@@ -364,7 +365,12 @@ fn assess_output(vendor: &str, command: &str, output: &str) -> (String, Vec<Stri
         } else if let Some(missing) = rule.missing_keyword {
             !output_lower.contains(&missing.to_ascii_lowercase())
         } else if let Some(threshold) = rule.threshold {
-            max_number(output) >= threshold
+            let value = if rule.percent {
+                max_percent(output)
+            } else {
+                max_number(output)
+            };
+            value >= threshold
         } else {
             false
         };
@@ -388,27 +394,50 @@ fn assess_output(vendor: &str, command: &str, output: &str) -> (String, Vec<Stri
     (health.to_string(), issues)
 }
 
-/// 提取输出中最大的整数（用于阈值规则）。
-fn max_number(output: &str) -> u64 {
-    let mut max = 0u64;
-    let mut current = 0u64;
-    let mut in_number = false;
-    for byte in output.bytes() {
-        if byte.is_ascii_digit() {
-            current = current.saturating_mul(10).saturating_add((byte - b'0') as u64);
-            in_number = true;
-        } else {
-            if in_number {
-                if current > max {
-                    max = current;
-                }
-                current = 0;
-                in_number = false;
+/// 提取输出中"NN% / NN.N%"格式的最大值（用于使用率类规则，避免把容量数字误当百分比）。
+fn max_percent(output: &str) -> f64 {
+    let bytes = output.as_bytes();
+    let mut max = 0.0f64;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
             }
+            if i < bytes.len() && bytes[i] == b'%' {
+                if let Ok(value) = output[start..i].parse::<f64>() {
+                    if value > max {
+                        max = value;
+                    }
+                }
+            }
+        } else {
+            i += 1;
         }
     }
-    if in_number && current > max {
-        max = current;
+    max
+}
+
+/// 提取输出中最大的数值（支持小数，用于负载/温度等非百分比规则）。
+fn max_number(output: &str) -> f64 {
+    let bytes = output.as_bytes();
+    let mut max = 0.0f64;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            if let Ok(value) = output[start..i].parse::<f64>() {
+                if value > max {
+                    max = value;
+                }
+            }
+        } else {
+            i += 1;
+        }
     }
     max
 }
