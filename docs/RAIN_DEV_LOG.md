@@ -55,3 +55,19 @@
 - **改动文件**：`src/App.tsx`、`src/i18n.ts`、`src/index.css`
 - **验证**：`npm run build` 通过（修复 1 处 TS 类型错误）
 - **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
+
+---
+
+## 2026-09-06 · 阶段 1 修复：布局规范 + 分组默认折叠持久化
+
+- **布局修复**：
+  - 分类管理区输入框过窄、加号按钮过大 → 输入框 `flex:1` 占满剩余宽度，加号按钮固定 32×32px
+  - 顶部「分类」「新建」按钮超出面板被截断 → 按钮容器加 `flexShrink:0` 防压缩
+  - 面板滚动条过粗 → 统一细化为 6px 圆角滚动条（分类列表/侧边栏/抽屉）
+- **分组折叠持久化**：
+  - 新增 `usePersistentExpandedCategories` hook，展开状态存 localStorage（`xundu.snippets.expanded`）
+  - 启动时默认**全部折叠**（展开集合为空），用户展开的分类下次启动保持展开
+  - 新分类默认折叠
+- **改动文件**：`src/App.tsx`、`src/index.css`
+- **验证**：`npm run build` 通过
+- **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）

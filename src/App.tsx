@@ -9137,7 +9137,7 @@ function Inspector({
   const [snippetCategory, setSnippetCategory] = useState('未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [expandedCategories, setExpandedCategories] = usePersistentExpandedCategories()
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
@@ -9259,7 +9259,7 @@ function Inspector({
           }
           const visibleGroups = [...groups.entries()].filter(([, list]) => list.length > 0)
           const toggleCategory = (cat: string) =>
-            setCollapsedCategories((prev) => {
+            setExpandedCategories((prev) => {
               const next = new Set(prev)
               if (next.has(cat)) next.delete(cat)
               else next.add(cat)
@@ -9272,7 +9272,7 @@ function Inspector({
                   <strong>{t('保存经常使用的命令')}</strong>
                   <span>{t('点击使用后会先回到运行页，不会直接执行。')}</span>
                 </div>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
                   <button className="utility-text-button" type="button" onClick={() => setCategoryEditorOpen((current) => !current)}>
                     <FolderPlus size={13} />
                     {t('分类')}
@@ -9292,17 +9292,17 @@ function Inspector({
               />
               {categoryEditorOpen && (
                 <div className="snippet-category-manager utility-editor">
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
                     <input
                       className="snippet-search"
-                      style={{ marginBottom: 0 }}
+                      style={{ marginBottom: 0, flex: 1, minWidth: 0 }}
                       type="text"
                       value={newCategoryName}
                       onChange={(event) => setNewCategoryName(event.target.value)}
                       placeholder={t('输入新分类名称')}
                       onKeyDown={(event) => { if (event.key === 'Enter') saveCategory() }}
                     />
-                    <button className="utility-primary-button" type="button" onClick={saveCategory} disabled={!newCategoryName.trim()} style={{ flexShrink: 0 }}>
+                    <button className="utility-primary-button" type="button" onClick={saveCategory} disabled={!newCategoryName.trim()} style={{ flexShrink: 0, width: 32, height: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Plus size={14} />
                     </button>
                   </div>
@@ -9355,17 +9355,17 @@ function Inspector({
                 </div>
               )}
               {visibleGroups.map(([category, list]) => {
-                const collapsed = collapsedCategories.has(category)
+                const isExpanded = expandedCategories.has(category)
                 return (
-                  <div key={category} className={`snippet-group${collapsed ? ' collapsed' : ''}`}>
+                  <div key={category} className={`snippet-group${isExpanded ? '' : ' collapsed'}`}>
                     <div className="snippet-group-header-row">
                       <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
-                        <span className="snippet-group-arrow">{collapsed ? '▸' : '▾'}</span>
+                        <span className="snippet-group-arrow">{isExpanded ? '▾' : '▸'}</span>
                         <strong>{category}</strong>
                         <span className="snippet-category-count">{list.length}</span>
                       </button>
                     </div>
-                    {!collapsed && (
+                    {isExpanded && (
                       <div className="snippet-list">
                         {list.map((snippet) => (
                           <div className="snippet-item" key={snippet.id} onContextMenu={(event) => openContextMenu(event, snippet.id)}>
@@ -13102,6 +13102,29 @@ function usePersistentSnippetCategories() {
   }, [categories])
 
   return [categories, setCategories] as const
+}
+
+function usePersistentExpandedCategories() {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('xundu.snippets.expanded')
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown
+        if (Array.isArray(parsed)) {
+          return new Set(parsed.filter((c): c is string => typeof c === 'string'))
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return new Set()
+  })
+
+  useEffect(() => {
+    localStorage.setItem('xundu.snippets.expanded', JSON.stringify([...expanded]))
+  }, [expanded])
+
+  return [expanded, setExpanded] as const
 }
 
 function usePersistentSessionNotes() {

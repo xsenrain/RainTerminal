@@ -4226,6 +4226,31 @@ body:has(.app-toast) .file-download-progress {
   margin-top: 4px;
 }
 
+.snippet-group-header-row {
+  display: flex;
+  align-items: center;
+}
+
+/* Thin scrollbars for snippet panels */
+.snippet-category-list::-webkit-scrollbar,
+.utility-panel::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.snippet-category-list::-webkit-scrollbar-thumb,
+.utility-panel::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 3px;
+}
+
+.snippet-category-list::-webkit-scrollbar-track,
+.utility-panel::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .utility-command-field select {
   width: 100%;
   box-sizing: border-box;
