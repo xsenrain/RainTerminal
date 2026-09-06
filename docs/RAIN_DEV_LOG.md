@@ -71,3 +71,18 @@
 - **改动文件**：`src/App.tsx`、`src/index.css`
 - **验证**：`npm run build` 通过
 - **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
+
+---
+
+## 2026-09-06 · 阶段 1 修复：面板背景透出终端 + 滚动条布局抖动
+
+- **背景透出修复**：
+  - 根因：`.inspector` 背景被全局规则设为 `transparent`，外层抽屉是半透明毛玻璃（`--glass-panel`，浅色下 74% 不透明），终端命令回显透过面板显示
+  - 修复：给 `.inspector` 加不透明背景（深色 `#14151a` / 浅色 `#f7f8fa`），完全遮挡后方终端
+- **滚动条修复**：
+  - 根因：实际滚动容器是 `.inspector`（`overflow: hidden auto`），但细滚动条样式错加到了 `.drawer-body`；Firefox `scrollbar-color` 写死深色 `#252630`
+  - 修复：webkit 滚动条样式改加到 `.inspector`（6px 细条 + 主题适配色 `--scroll-thumb`）；Firefox 同步改主题色；加 `scrollbar-gutter: stable` 预留滚动条空间，防止出现时挤压内容宽度
+- **未分类分组**：确认默认存在且不可删除（分类管理区不显示删除按钮，右键菜单仍可移动到未分类）
+- **改动文件**：`src/index.css`
+- **验证**：`npm run build` 通过
+- **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
