@@ -9307,14 +9307,12 @@ function Inspector({
                     </button>
                   </div>
                   <div className="snippet-category-list">
-                    {categories.map((cat) => (
+                    {categories.filter((cat) => cat !== '未分类').map((cat) => (
                       <div key={cat} className="snippet-category-row">
                         <span>{cat}</span>
-                        {cat !== '未分类' && (
-                          <button type="button" className="utility-text-button danger" onClick={() => onDeleteCategory(cat)} title={t('删除分类')}>
-                            <Trash2 size={12} />
-                          </button>
-                        )}
+                        <button type="button" className="utility-text-button danger" onClick={() => onDeleteCategory(cat)} title={t('删除分类')}>
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     ))}
                   </div>
