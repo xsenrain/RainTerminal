@@ -955,7 +955,6 @@ function App() {
   const [remoteDesktopProfiles, setRemoteDesktopProfiles, remoteDesktopCredentialState] = usePersistentRemoteDesktopProfiles()
   const [snippets, setSnippets] = usePersistentSnippets()
   const [snippetCategories, setSnippetCategories] = usePersistentSnippetCategories()
-  const [categoryNotice, setCategoryNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [sessionNotes, setSessionNotes] = usePersistentSessionNotes()
   const [remoteAuxConcurrency, setRemoteAuxConcurrency] = usePersistentRemoteAuxConcurrency()
   const [appearance, setAppearance] = usePersistentAppAppearance()
@@ -2240,19 +2239,19 @@ function App() {
     const trimmed = name.trim()
     if (!trimmed) return
     if (snippetCategories.includes(trimmed)) {
-      setCategoryNotice({ type: 'error', text: `分类「${trimmed}」已存在` })
+      setToast(`分类「${trimmed}」已存在`)
       return
     }
     setSnippetCategories((current) => {
       const withoutUncategorized = current.filter((c) => c !== '未分类')
       return [...withoutUncategorized, trimmed, '未分类']
     })
-    setCategoryNotice({ type: 'success', text: `分类「${trimmed}」新增成功` })
+    setToast(`分类「${trimmed}」新增成功`)
   }
 
   function deleteCategory(name: string) {
     if (name === '未分类') {
-      setCategoryNotice({ type: 'error', text: '「未分类」是默认分类，不可删除' })
+      setToast('「未分类」是默认分类，不可删除')
       return
     }
     const commandCount = snippets.filter((s) => s.category === name).length
@@ -2262,7 +2261,7 @@ function App() {
     }
     setSnippetCategories((current) => current.filter((c) => c !== name))
     setSnippets((current) => current.filter((s) => s.category !== name))
-    setCategoryNotice({ type: 'success', text: `分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}` })
+    setToast(`分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}`)
   }
 
   function moveSnippet(id: string, category: string) {
@@ -2270,12 +2269,6 @@ function App() {
       current.map((s) => (s.id === id ? { ...s, category } : s)),
     )
   }
-
-  useEffect(() => {
-    if (!categoryNotice) return
-    const timer = window.setTimeout(() => setCategoryNotice(null), 2200)
-    return () => window.clearTimeout(timer)
-  }, [categoryNotice])
 
   async function importOpenSshConfig() {
     try {
@@ -2574,7 +2567,6 @@ function App() {
                       onAddCategory={addCategory}
                       onDeleteCategory={deleteCategory}
                       onMoveSnippet={moveSnippet}
-                      categoryNotice={categoryNotice}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -9115,7 +9107,6 @@ function Inspector({
   onAddCategory,
   onDeleteCategory,
   onMoveSnippet,
-  categoryNotice,
   commandHistory,
   onClearHistory,
   notes,
@@ -9137,7 +9128,6 @@ function Inspector({
   onAddCategory: (name: string) => void
   onDeleteCategory: (name: string) => void
   onMoveSnippet: (id: string, category: string) => void
-  categoryNotice: { type: 'success' | 'error'; text: string } | null
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9215,13 +9205,6 @@ function Inspector({
   return (
     <aside className="inspector utility-panel">
       <section className="utility-stage">
-        {categoryNotice && (
-          <div className="snippet-float-notice-wrapper">
-            <div className={`snippet-float-notice ${categoryNotice.type}`}>
-              {categoryNotice.text}
-            </div>
-          </div>
-        )}
         {activeTab === 'run' && (
           <div className="utility-page utility-run-page">
             <div className="utility-target">
