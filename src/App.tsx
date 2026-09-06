@@ -9375,7 +9375,6 @@ function Inspector({
                         setGroupContextMenu({ x: event.clientX, y: event.clientY, category })
                       }}
                     >
-                      {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true" title="右键排序">⋮⋮</span>}
                       <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
                         <span className="snippet-group-arrow">{isExpanded ? '▾' : '▸'}</span>
                         <strong>{category}</strong>
@@ -9405,7 +9404,7 @@ function Inspector({
                   </div>
                 )
               })}
-              {contextMenu && (
+              {contextMenu && createPortal(
                 <div
                   className="snippet-context-menu"
                   style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -9425,9 +9424,10 @@ function Inspector({
                       {cat}
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body,
               )}
-              {groupContextMenu && (() => {
+              {groupContextMenu && createPortal((() => {
                 const sortable = categories.filter((c) => c !== '未分类')
                 const idx = sortable.indexOf(groupContextMenu.category)
                 const move = (to: number) => {
@@ -9447,7 +9447,7 @@ function Inspector({
                     <button type="button" className="snippet-context-menu-item" disabled={idx >= sortable.length - 1} onClick={() => move(sortable.length - 1)}>⤓ 移至尾部</button>
                   </div>
                 )
-              })()}
+              })(), document.body)}
             </div>
           )
         })()}
