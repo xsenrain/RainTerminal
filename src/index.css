@@ -6601,3 +6601,181 @@ body.native-window-drag-active .monitor-tabs button {
   font-size: 10px;
   color: var(--text-tertiary);
 }
+
+/* ============ 自动化巡检全页布局 ============ */
+.inspect-workspace {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+
+.inspect-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.inspect-workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspect-workspace-title strong {
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.inspect-workspace-title span {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspect-workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.inspect-workspace-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.inspect-device-pane {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--surface-2);
+}
+
+.inspect-command-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  gap: 8px;
+}
+
+.inspect-pane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.inspect-pane-head strong {
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+
+.inspect-pane-head span {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.inspect-device-form-card {
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-md);
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--surface-1);
+}
+
+.inspect-device-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.inspect-device-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.inspect-device-form label input,
+.inspect-device-form label select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  box-sizing: border-box;
+}
+
+.inspect-device-form label input:focus,
+.inspect-device-form label select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.inspect-device-form .inspect-device-form-full {
+  grid-column: 1 / -1;
+}
+
+.inspect-device-form-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inspect-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inspect-results-pane {
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+  padding: 10px 14px;
+}
+
+.inspect-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inspect-results-grid .inspect-result-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inspect-results-grid .inspect-command-output pre {
+  max-height: 160px;
+}

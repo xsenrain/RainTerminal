@@ -1005,6 +1005,7 @@ function App() {
   const [transferManagerOpen, setTransferManagerOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<DockPanel>(null)
+  const [mainView, setMainView] = useState<'workbench' | 'inspect'>('workbench')
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('run')
   const [toast, setToast] = useState('')
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
@@ -2461,6 +2462,13 @@ function App() {
   }
 
   function openPanel(panel: Exclude<DockPanel, null>) {
+    if (panel === 'inspect') {
+      // 自动化巡检为独立全页视图，不再使用右侧抽屉
+      setMainView('inspect')
+      setActivePanel(null)
+      return
+    }
+    setMainView('workbench')
     setActivePanel((current) => (current === panel ? null : panel))
     if (panel !== 'servers' && panel !== 'local') {
       setInspectorTab(panel)
@@ -2637,6 +2645,16 @@ function App() {
             )}
           </AnimatePresence>
         </aside>
+        {mainView === 'inspect' ? (
+          <InspectWorkspace
+            inspectDevices={inspectDevices}
+            onAddInspectDevice={addInspectDevice}
+            onUpdateInspectDevice={updateInspectDevice}
+            onDeleteInspectDevice={deleteInspectDevice}
+            onNotify={(message) => setToast(message)}
+            snippets={snippets}
+          />
+        ) : (
         <Profiler id="Workbench" onRender={handleRenderProfile}>
           <Workbench
             workspaces={workspaces}
@@ -2667,6 +2685,7 @@ function App() {
             terminalTheme={terminalTheme}
           />
         </Profiler>
+        )}
       </div>
       </section>
 
@@ -10273,6 +10292,667 @@ function Inspector({
         )}
       </section>
     </aside>
+  )
+}
+
+function InspectWorkspace({
+  inspectDevices,
+  onAddInspectDevice,
+  onUpdateInspectDevice,
+  onDeleteInspectDevice,
+  onNotify,
+  snippets,
+}: {
+  inspectDevices: InspectDevice[]
+  onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
+  onUpdateInspectDevice: (id: string, patch: Partial<Omit<InspectDevice, 'id'>>) => void
+  onDeleteInspectDevice: (id: string) => void
+  onNotify: (message: string) => void
+  snippets: Snippet[]
+}) {
+  const { t } = useAppLocale()
+  const [inspectEditingId, setInspectEditingId] = useState<string | null>(null)
+  const [inspectEditorOpen, setInspectEditorOpen] = useState(false)
+  const [inspectDraft, setInspectDraft] = useState<Omit<InspectDevice, 'id'>>({
+    name: '',
+    host: '',
+    port: 22,
+    username: '',
+    password: '',
+    vendor: 'linux',
+    remark: '',
+  })
+  const [selectedInspectIds, setSelectedInspectIds] = useState<Set<string>>(new Set())
+  const [inspectCommands, setInspectCommands] = useState<{ id: string; name: string; command: string }[]>([])
+  const [inspectManualCommand, setInspectManualCommand] = useState('')
+  const [inspectTemplatePickerOpen, setInspectTemplatePickerOpen] = useState(false)
+  const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
+  const [inspectRunning, setInspectRunning] = useState(false)
+  const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
+  const [inspectConcurrency, setInspectConcurrency] = useState(5)
+  const [inspectProgress, setInspectProgress] = useState<{ current: number; total: number } | null>(null)
+
+  useEffect(() => {
+    const unlistenTask = listen<{ current: number; total: number; deviceName: string }>(
+      'inspect-progress',
+      (event) => {
+        setInspectProgress({ current: event.payload.current, total: event.payload.total })
+      },
+    ).catch(() => () => undefined)
+    return () => {
+      void unlistenTask.then((unlisten) => unlisten())
+    }
+  }, [])
+
+  function openInspectEditor(device?: InspectDevice) {
+    if (device) {
+      setInspectEditingId(device.id)
+      setInspectDraft({
+        name: device.name,
+        host: device.host,
+        port: device.port,
+        username: device.username,
+        password: device.password,
+        vendor: device.vendor,
+        remark: device.remark,
+      })
+    } else {
+      setInspectEditingId(null)
+      setInspectDraft({ name: '', host: '', port: 22, username: '', password: '', vendor: 'linux', remark: '' })
+    }
+    setInspectEditorOpen(true)
+  }
+
+  function saveInspectDevice() {
+    if (!inspectDraft.name.trim() || !inspectDraft.host.trim()) return
+    if (inspectEditingId) {
+      onUpdateInspectDevice(inspectEditingId, {
+        ...inspectDraft,
+        port: Number(inspectDraft.port) || 22,
+      })
+      onNotify(t('设备已更新'))
+    } else {
+      onAddInspectDevice({
+        ...inspectDraft,
+        port: Number(inspectDraft.port) || 22,
+      })
+      onNotify(t('设备已添加'))
+    }
+    setInspectEditorOpen(false)
+  }
+
+  function confirmDeleteInspectDevice(device: InspectDevice) {
+    const confirmed = window.confirm(`删除设备「${device.name}」？`)
+    if (!confirmed) return
+    onDeleteInspectDevice(device.id)
+    setSelectedInspectIds((current) => {
+      const next = new Set(current)
+      next.delete(device.id)
+      return next
+    })
+    onNotify(t('设备已删除'))
+  }
+
+  async function runInspectBatch() {
+    const selectedDevices = inspectDevices.filter((d) => selectedInspectIds.has(d.id))
+    const commandList = inspectCommands
+      .map((item) => ({ name: item.name, command: item.command.trim() }))
+      .filter((item) => item.command.length > 0)
+    if (selectedDevices.length === 0 || commandList.length === 0) return
+
+    setInspectRunning(true)
+    setInspectResults(null)
+    setInspectProgress({ current: 0, total: selectedDevices.length })
+    try {
+      const results = await invoke<InspectExecResult[]>('batch_execute_inspect', {
+        devices: selectedDevices.map((d) => ({
+          name: d.name,
+          host: d.host,
+          port: d.port,
+          username: d.username,
+          password: d.password,
+          vendor: d.vendor,
+        })),
+        commands: commandList,
+        concurrency: inspectConcurrency,
+      })
+      setInspectResults(results)
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setInspectResults([
+        {
+          deviceName: t('执行失败'),
+          host: '',
+          success: false,
+          error: message,
+          outputs: [],
+          durationMs: 0,
+          health: 'critical',
+        },
+      ])
+    } finally {
+      setInspectRunning(false)
+      setInspectProgress(null)
+    }
+  }
+
+  function toggleInspectDevice(id: string) {
+    setSelectedInspectIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedInspectIds(
+      selectedInspectIds.size === inspectDevices.length
+        ? new Set()
+        : new Set(inspectDevices.map((d) => d.id)),
+    )
+  }
+
+  function addInspectCommand(name: string, command: string) {
+    if (!command.trim()) return
+    const id = `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+    setInspectCommands((current) => [...current, { id, name: name || t('自定义命令'), command: command.trim() }])
+  }
+
+  function removeInspectCommand(id: string) {
+    setInspectCommands((current) => current.filter((item) => item.id !== id))
+  }
+
+  function moveInspectCommand(id: string, direction: -1 | 1) {
+    setInspectCommands((current) => {
+      const index = current.findIndex((item) => item.id === id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= current.length) return current
+      const next = [...current]
+      const [moved] = next.splice(index, 1)
+      next.splice(target, 0, moved)
+      return next
+    })
+  }
+
+  function addManualInspectCommand() {
+    if (!inspectManualCommand.trim()) return
+    addInspectCommand(t('自定义命令'), inspectManualCommand)
+    setInspectManualCommand('')
+  }
+
+  function addSnippetToInspect(snippet: Snippet) {
+    addInspectCommand(snippet.name, snippet.command)
+  }
+
+  function escapeCsvCell(value: string): string {
+    if (/[",\n\r]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`
+    }
+    return value
+  }
+
+  function healthLabel(health: string): string {
+    return health === 'ok' ? t('正常') : health === 'warn' ? t('警告') : health === 'critical' ? t('严重') : health
+  }
+
+  async function exportInspectResults(format: 'json' | 'csv') {
+    if (!inspectResults) return
+    const date = new Date().toISOString().slice(0, 10)
+    try {
+      if (format === 'json') {
+        await invoke('save_text_export', {
+          suggestedName: `巡检报告-${date}.json`,
+          content: JSON.stringify(inspectResults, null, 2),
+          filter: 'json',
+        })
+      } else {
+        const header = ['设备名称', '主机', '健康状态', '执行结果', '耗时(秒)', '问题'].map(escapeCsvCell).join(',')
+        const rows = inspectResults.map((result) => {
+          const issues = result.outputs.flatMap((output) => output.issues).join('; ')
+          return [result.deviceName, result.host, healthLabel(result.health), result.success ? t('成功') : t('失败'), (result.durationMs / 1000).toFixed(1), issues]
+            .map(escapeCsvCell)
+            .join(',')
+        })
+        await invoke('save_text_export', {
+          suggestedName: `巡检汇总-${date}.csv`,
+          content: `\uFEFF${[header, ...rows].join('\r\n')}`,
+          filter: 'csv',
+        })
+      }
+    } catch (reason) {
+      onNotify(`导出失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function importInspectDevicesCsv() {
+    try {
+      const text = await invoke<string | null>('open_text_import', { filter: 'csv' })
+      if (!text) return
+      const rows = parseCsvRows(text.replace(/^\uFEFF/, ''))
+      if (rows.length === 0) {
+        onNotify(t('CSV 文件为空'))
+        return
+      }
+      const header = rows[0].map((cell) => cell.trim().toLowerCase())
+      const nameIndex = header.indexOf('name')
+      const hostIndex = header.indexOf('host')
+      const portIndex = header.indexOf('port')
+      const usernameIndex = header.indexOf('username')
+      const passwordIndex = header.indexOf('password')
+      const vendorIndex = header.indexOf('vendor')
+      const remarkIndex = header.indexOf('remark')
+      if (hostIndex < 0) {
+        onNotify(t('CSV 缺少 host 列'))
+        return
+      }
+      let added = 0
+      for (const row of rows.slice(1)) {
+        const host = (row[hostIndex] ?? '').trim()
+        if (!host) continue
+        const vendor = vendorIndex >= 0 ? (row[vendorIndex] ?? '').trim().toLowerCase() : 'linux'
+        onAddInspectDevice({
+          name: (nameIndex >= 0 ? row[nameIndex] ?? '' : '').trim() || host,
+          host,
+          port: portIndex >= 0 ? Number(row[portIndex]) || 22 : 22,
+          username: (usernameIndex >= 0 ? row[usernameIndex] ?? '' : '').trim(),
+          password: (passwordIndex >= 0 ? row[passwordIndex] ?? '' : '').trim(),
+          vendor: (INSPECT_VENDORS as readonly string[]).includes(vendor) ? vendor : 'linux',
+          remark: (remarkIndex >= 0 ? row[remarkIndex] ?? '' : '').trim(),
+        })
+        added += 1
+      }
+      onNotify(`${t('CSV 导入成功')}：${added} 台`)
+    } catch (reason) {
+      onNotify(`CSV 导入失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  function parseCsvRows(text: string): string[][] {
+    const rows: string[][] = []
+    let row: string[] = []
+    let cell = ''
+    let inQuotes = false
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i]
+      if (inQuotes) {
+        if (char === '"') {
+          if (text[i + 1] === '"') {
+            cell += '"'
+            i += 1
+          } else {
+            inQuotes = false
+          }
+        } else {
+          cell += char
+        }
+      } else if (char === '"') {
+        inQuotes = true
+      } else if (char === ',') {
+        row.push(cell)
+        cell = ''
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && text[i + 1] === '\n') i += 1
+        row.push(cell)
+        cell = ''
+        rows.push(row)
+        row = []
+      } else {
+        cell += char
+      }
+    }
+    if (cell.length > 0 || row.length > 0) {
+      row.push(cell)
+      rows.push(row)
+    }
+    return rows
+  }
+
+  const allSelected = inspectDevices.length > 0 && selectedInspectIds.size === inspectDevices.length
+
+  return (
+    <section className="inspect-workspace">
+      <header className="inspect-workspace-header">
+        <div className="inspect-workspace-title">
+          <Activity size={16} />
+          <strong>{t('自动化巡检')}</strong>
+          <span>{t('管理巡检设备，批量执行命令并自动判断故障。')}</span>
+        </div>
+        <div className="inspect-workspace-actions">
+          <button className="utility-text-button" type="button" onClick={() => void importInspectDevicesCsv()}>
+            <Upload size={13} />
+            {t('从 CSV 导入设备')}
+          </button>
+          <button className="utility-primary-button compact" type="button" onClick={() => openInspectEditor()}>
+            <Plus size={13} />
+            {t('添加设备')}
+          </button>
+        </div>
+      </header>
+
+      <div className="inspect-workspace-body">
+        <div className="inspect-device-pane">
+          <div className="inspect-pane-head">
+            <strong>{t('设备列表')} ({inspectDevices.length})</strong>
+            {inspectDevices.length > 0 && (
+              <button className="utility-text-button" type="button" onClick={toggleSelectAll}>
+                {allSelected ? t('取消全选') : t('全选')}
+              </button>
+            )}
+          </div>
+
+          {inspectEditorOpen && (
+            <div className="inspect-device-form-card">
+              <div className="inspect-pane-head">
+                <strong>{inspectEditingId ? t('编辑设备') : t('添加设备')}</strong>
+                <button className="utility-text-button" type="button" onClick={() => setInspectEditorOpen(false)}>
+                  <X size={13} />
+                  {t('收起')}
+                </button>
+              </div>
+              <div className="inspect-device-form">
+                <label>
+                  <span>{t('名称')}</span>
+                  <input value={inspectDraft.name} onChange={(e) => setInspectDraft({ ...inspectDraft, name: e.target.value })} placeholder="Centos-Web-01" />
+                </label>
+                <label>
+                  <span>{t('主机')}</span>
+                  <input value={inspectDraft.host} onChange={(e) => setInspectDraft({ ...inspectDraft, host: e.target.value })} placeholder="192.168.1.10" />
+                </label>
+                <label>
+                  <span>{t('端口')}</span>
+                  <input type="number" min={1} max={65535} value={inspectDraft.port} onChange={(e) => setInspectDraft({ ...inspectDraft, port: Number(e.target.value) || 22 })} />
+                </label>
+                <label>
+                  <span>{t('厂商')}</span>
+                  <select value={inspectDraft.vendor} onChange={(e) => setInspectDraft({ ...inspectDraft, vendor: e.target.value })}>
+                    {INSPECT_VENDORS.map((vendor) => (
+                      <option key={vendor} value={vendor}>{t(`厂商.${vendor}`)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('账号')}</span>
+                  <input value={inspectDraft.username} onChange={(e) => setInspectDraft({ ...inspectDraft, username: e.target.value })} placeholder="root" />
+                </label>
+                <label>
+                  <span>{t('密码')}</span>
+                  <input type="password" value={inspectDraft.password} onChange={(e) => setInspectDraft({ ...inspectDraft, password: e.target.value })} />
+                </label>
+                <label className="inspect-device-form-full">
+                  <span>{t('备注')}</span>
+                  <input value={inspectDraft.remark} onChange={(e) => setInspectDraft({ ...inspectDraft, remark: e.target.value })} />
+                </label>
+              </div>
+              <div className="inspect-device-form-actions">
+                <button className="utility-primary-button" type="button" onClick={saveInspectDevice} disabled={!inspectDraft.name.trim() || !inspectDraft.host.trim()}>
+                  <Save size={13} />
+                  {inspectEditingId ? t('保存修改') : t('保存设备')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="inspect-device-list">
+            {inspectDevices.length === 0 && !inspectEditorOpen && (
+              <div className="utility-empty">
+                <Activity size={18} />
+                <strong>{t('还没有巡检设备')}</strong>
+                <span>{t('点击"添加设备"录入你的服务器或网络设备。')}</span>
+              </div>
+            )}
+            {inspectDevices.map((device) => (
+              <div className="inspect-device-item" key={device.id}>
+                <label className="inspect-device-check">
+                  <input
+                    type="checkbox"
+                    checked={selectedInspectIds.has(device.id)}
+                    onChange={() => toggleInspectDevice(device.id)}
+                  />
+                </label>
+                <div className="inspect-device-main">
+                  <div className="inspect-device-title">
+                    <strong>{device.name}</strong>
+                    <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{t(`厂商.${device.vendor}`)}</em>
+                  </div>
+                  <div className="inspect-device-meta">
+                    <span>{device.host}:{device.port}</span>
+                    {device.username && <span>{device.username}</span>}
+                    {device.remark && <span>{device.remark}</span>}
+                  </div>
+                </div>
+                <div className="inspect-device-actions">
+                  <IconButton label={t('编辑设备')} onClick={() => openInspectEditor(device)}>
+                    <Edit3 size={14} />
+                  </IconButton>
+                  <IconButton label={t('删除设备')} onClick={() => confirmDeleteInspectDevice(device)}>
+                    <Trash2 size={14} />
+                  </IconButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="inspect-command-pane">
+          <div className="inspect-pane-head">
+            <strong>{t('命令配置')}</strong>
+            <span>{inspectCommands.length > 0 ? `${inspectCommands.length} ${t('条命令')}` : ''}</span>
+          </div>
+
+          {inspectCommands.length > 0 && (
+            <div className="inspect-command-list">
+              {inspectCommands.map((item, index) => (
+                <div className="inspect-command-item" key={item.id}>
+                  <div className="inspect-command-item-main">
+                    <strong>{item.name}</strong>
+                    <code>{item.command}</code>
+                  </div>
+                  <div className="inspect-command-item-actions">
+                    <IconButton label={t('上移')} onClick={() => moveInspectCommand(item.id, -1)} disabled={index === 0}>
+                      <ArrowUp size={13} />
+                    </IconButton>
+                    <IconButton label={t('下移')} onClick={() => moveInspectCommand(item.id, 1)} disabled={index === inspectCommands.length - 1}>
+                      <ArrowDown size={13} />
+                    </IconButton>
+                    <IconButton label={t('移除命令')} onClick={() => removeInspectCommand(item.id)}>
+                      <X size={13} />
+                    </IconButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="inspect-command-add-row">
+            <input
+              value={inspectManualCommand}
+              onChange={(event) => setInspectManualCommand(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  addManualInspectCommand()
+                }
+              }}
+              placeholder={t('输入命令后回车添加')}
+            />
+            <button className="utility-primary-button compact" type="button" onClick={addManualInspectCommand} disabled={!inspectManualCommand.trim()}>
+              <Plus size={13} />
+              {t('添加')}
+            </button>
+            <button className="utility-text-button" type="button" onClick={() => setInspectTemplatePickerOpen((v) => !v)}>
+              {t('从模板选择')}
+            </button>
+          </div>
+
+          {inspectTemplatePickerOpen && (
+            <div className="inspect-template-picker">
+              <div className="inspect-template-search">
+                <input
+                  value={inspectTemplateSearch}
+                  onChange={(event) => setInspectTemplateSearch(event.target.value)}
+                  placeholder={t('搜索命令模板')}
+                />
+              </div>
+              {(() => {
+                const recommendedVendors = new Set(
+                  inspectDevices
+                    .filter((d) => selectedInspectIds.has(d.id))
+                    .map((d) => d.vendor),
+                )
+                const groups = new Map<string, Snippet[]>()
+                for (const snippet of snippets) {
+                  if (
+                    inspectTemplateSearch &&
+                    !snippet.name.toLowerCase().includes(inspectTemplateSearch.toLowerCase()) &&
+                    !snippet.command.toLowerCase().includes(inspectTemplateSearch.toLowerCase())
+                  ) {
+                    continue
+                  }
+                  const category = snippet.category || '未分类'
+                  if (!groups.has(category)) groups.set(category, [])
+                  groups.get(category)!.push(snippet)
+                }
+                const addedCommands = new Set(inspectCommands.map((item) => item.command))
+                return [...groups.entries()].map(([category, items]) => {
+                  const recommended = recommendedVendors.size > 0 && [...recommendedVendors].some((v) => category.includes(v))
+                  return (
+                    <details className="inspect-template-group" key={category} open={recommended || Boolean(inspectTemplateSearch)}>
+                      <summary className={recommended ? 'recommended' : undefined}>
+                        {category}
+                        <span>{items.length}</span>
+                      </summary>
+                      {items.map((snippet) => (
+                        <div className="inspect-template-item" key={snippet.id}>
+                          <div className="inspect-template-item-main">
+                            <strong>{snippet.name}</strong>
+                            <code>{snippet.command}</code>
+                          </div>
+                          <button
+                            className="inspect-template-add"
+                            type="button"
+                            disabled={addedCommands.has(snippet.command)}
+                            onClick={() => addSnippetToInspect(snippet)}
+                          >
+                            {addedCommands.has(snippet.command) ? t('已添加') : '+'}
+                          </button>
+                        </div>
+                      ))}
+                    </details>
+                  )
+                })
+              })()}
+            </div>
+          )}
+
+          <div className="inspect-exec-bar">
+            <label className="inspect-concurrency">
+              <span>{t('并发')}</span>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={inspectConcurrency}
+                onChange={(event) => setInspectConcurrency(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
+              />
+            </label>
+            <button
+              className="utility-primary-button"
+              type="button"
+              onClick={runInspectBatch}
+              disabled={inspectRunning || selectedInspectIds.size === 0 || inspectCommands.length === 0}
+            >
+              <Activity size={14} />
+              {inspectRunning
+                ? inspectProgress
+                  ? `${t('执行中…')} ${inspectProgress.current}/${inspectProgress.total}`
+                  : t('执行中…')
+                : `${t('执行')} (${selectedInspectIds.size})`}
+            </button>
+            {inspectRunning && inspectProgress && (
+              <div className="inspect-progress-track">
+                <div
+                  className="inspect-progress-fill"
+                  style={{ width: `${(inspectProgress.current / Math.max(1, inspectProgress.total)) * 100}%` }}
+                />
+              </div>
+            )}
+            {inspectResults && !inspectRunning && (
+              <div className="inspect-export-actions">
+                <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('json')}>
+                  {t('导出 JSON')}
+                </button>
+                <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('csv')}>
+                  {t('导出 CSV')}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {inspectResults && (
+        <section className="inspect-results-pane">
+          <div className="inspect-results">
+            <div className="inspect-results-summary">
+              <strong>
+                {t('完成')}：{inspectResults.filter((r) => r.success).length}/{inspectResults.length}
+              </strong>
+              <span>
+                {inspectResults.filter((r) => !r.success).length > 0
+                  ? `${t('失败')}：${inspectResults.filter((r) => !r.success).length}`
+                  : t('全部成功')}
+              </span>
+              {(() => {
+                const critical = inspectResults.filter((r) => r.health === 'critical').length
+                const warn = inspectResults.filter((r) => r.health === 'warn').length
+                const ok = inspectResults.filter((r) => r.health === 'ok').length
+                return (
+                  <span className="inspect-results-health">
+                    {ok > 0 && <em className="health-ok">{t('正常')} {ok}</em>}
+                    {warn > 0 && <em className="health-warn">{t('警告')} {warn}</em>}
+                    {critical > 0 && <em className="health-critical">{t('严重')} {critical}</em>}
+                  </span>
+                )
+              })()}
+            </div>
+            <div className="inspect-results-grid">
+              {inspectResults.map((result) => (
+                <div className={`inspect-result-item ${result.health === 'ok' ? 'ok' : result.health === 'warn' ? 'warn' : 'fail'}`} key={`${result.host}-${result.deviceName}`}>
+                  <div className="inspect-result-header">
+                    <span className={`inspect-result-dot ${result.health === 'ok' ? 'ok' : result.health === 'warn' ? 'warn' : 'fail'}`} />
+                    <strong>{result.deviceName}</strong>
+                    <em>{result.host}</em>
+                    <em className={`inspect-health-badge health-${result.health}`}>
+                      {healthLabel(result.health)}
+                    </em>
+                    <span className="inspect-result-time">{(result.durationMs / 1000).toFixed(1)}s</span>
+                  </div>
+                  {!result.success && result.error && <div className="inspect-result-error">{result.error}</div>}
+                  {result.outputs.map((output, index) => (
+                    <details className="inspect-command-output" key={index} open={!output.success || output.health === 'critical'}>
+                      <summary>
+                        <span className={`inspect-result-dot ${output.health === 'ok' ? 'ok' : output.health === 'warn' ? 'warn' : 'fail'}`} />
+                        {output.command}
+                        {output.issues.length > 0 && (
+                          <em className="inspect-command-issues">
+                            {output.issues.map((issue) => `⚠ ${issue}`).join(' · ')}
+                          </em>
+                        )}
+                      </summary>
+                      <pre>{output.output || t('（无输出）')}</pre>
+                    </details>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+    </section>
   )
 }
 
