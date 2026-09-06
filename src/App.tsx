@@ -9412,8 +9412,8 @@ function Inspector({
                         setDragOverCategory(null)
                       }}
                     >
-                      <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
-                        {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true">⋮⋮</span>}
+                      {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true">⋮⋮</span>}
+                      <button type="button" className="snippet-group-header" draggable={false} onClick={() => toggleCategory(category)}>
                         <span className="snippet-group-arrow">{isExpanded ? '▾' : '▸'}</span>
                         <strong>{category}</strong>
                         <span className="snippet-category-count">{list.length}</span>

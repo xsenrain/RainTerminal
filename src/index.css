@@ -4190,16 +4190,10 @@ body:has(.app-toast) .file-download-progress {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.snippet-group-drag-handle {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  cursor: grab;
-  flex-shrink: 0;
-  user-select: none;
-  letter-spacing: -2px;
-}
-
 .snippet-group-header-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   cursor: default;
 }
 
@@ -4209,6 +4203,36 @@ body:has(.app-toast) .file-download-progress {
 
 .snippet-group-header-row[draggable="true"]:active {
   cursor: grabbing;
+}
+
+.snippet-group-drag-handle {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+  letter-spacing: -2px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.snippet-group-drag-handle:active {
+  cursor: grabbing;
+}
+
+.snippet-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
 .snippet-group-header {
