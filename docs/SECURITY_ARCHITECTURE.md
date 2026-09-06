@@ -1,4 +1,4 @@
-# Security Architecture
+﻿# Security Architecture
 
 ## Credentials
 
@@ -14,7 +14,7 @@ Supported profile authentication methods are password, private-key file with an 
 
 ## Diagnostics
 
-Diagnostics are written under `%LOCALAPPDATA%/XunDuTerminal/logs`, rotate at 5 MiB, and keep one backup. Common password, token, passphrase, secret, RDP `/pass:`, and private-key markers are redacted before writing.
+Diagnostics are written under `%LOCALAPPDATA%/RainTerminal/logs`, rotate at 5 MiB, and keep one backup. Common password, token, passphrase, secret, RDP `/pass:`, and private-key markers are redacted before writing.
 
 Diagnostic redaction is defense in depth, not permission to log secrets. New code must avoid passing secrets into log functions in the first place.
 

@@ -147,9 +147,7 @@ try {
   await page.locator('.settings-nav button').filter({ hasText: '关于' }).click()
   const aboutText = await page.locator('.settings-pane').innerText()
   assert(!/Codex Dream Skin|MIT|开源项目/.test(aboutText), `about section still exposed theme source copy: ${aboutText}`)
-  assert(aboutText.includes('XunDuTerminal') && aboutText.includes('v0.2.2'), 'about section did not show product identity and version')
-  assert(aboutText.includes('https://xunduyun.com/'), 'about section did not show the enterprise server website')
-  assert(aboutText.includes('1090339570') && aboutText.includes('262430517'), 'about section did not show both technical QQ groups')
+  assert(aboutText.includes('RainTerminal') && aboutText.includes('v1.0.0'), 'about section did not show product identity and version')
   assert(!aboutText.includes('前往官网'), 'update section still exposed the retired website fallback')
   const aboutTypography = await page.evaluate(() => {
     const fontSize = (selector) => {

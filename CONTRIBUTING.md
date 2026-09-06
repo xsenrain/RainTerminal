@@ -1,6 +1,6 @@
-# Contributing
+﻿# Contributing
 
-Thank you for helping improve XunDuTerminal.
+Thank you for helping improve RainTerminal.
 
 ## Before You Start
 

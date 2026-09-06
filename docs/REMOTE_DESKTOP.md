@@ -1,6 +1,6 @@
-# Native remote desktop
+﻿# Native remote desktop
 
-XunDuTerminal runs RDP sessions inside the desktop process through IronRDP. It does not require Docker, `guacd`, a gateway port, or a separately installed RDP client.
+RainTerminal runs RDP sessions inside the desktop process through IronRDP. It does not require Docker, `guacd`, a gateway port, or a separately installed RDP client.
 
 ## Connect
 

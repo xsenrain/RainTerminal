@@ -1,7 +1,7 @@
-{
+﻿{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://xundu.local/skin.schema.json",
-  "title": "XunDuTerminal Skin",
+  "$id": "https://rain.local/skin.schema.json",
+  "title": "RainTerminal Skin",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "order", "name", "description", "preview", "effects", "dark", "light"],

@@ -1,4 +1,4 @@
-# XunDuTerminal Skin 主题预设
+﻿# RainTerminal Skin 主题预设
 
 `Skin/` 中每个一级子目录代表一套主题，应用会在构建时自动发现其中的 `skin.json`。复制任意现有目录、修改 `id` 和颜色后重新构建，即可加入自己的预设；不需要修改 React 或 CSS。
 

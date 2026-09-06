@@ -1,4 +1,4 @@
-# Release Process
+﻿# Release Process
 
 ## Versioning
 
@@ -30,7 +30,7 @@ npm run desktop:build
 4. Test installation, upgrade, uninstall, credential migration, SSH, and RDP on a clean Windows user profile.
 5. Publish the draft only after the checks below pass.
 
-Publishing a stable release triggers a second job that copies the release's `latest.json` into `deploy/xunduterminal/latest.json` on the default branch. Prereleases never update the public client manifest.
+Publishing a stable release triggers a second job that copies the release's `latest.json` into `deploy/RainTerminal/latest.json` on the default branch. Prereleases never update the public client manifest.
 
 ## Signing Gate
 

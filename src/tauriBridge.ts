@@ -255,7 +255,7 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
     case 'save_text_export': {
       const sandboxWindow = window as typeof window & { __XUNDU_SANDBOX_TEXT_EXPORT__?: { name: string; content: string } }
       sandboxWindow.__XUNDU_SANDBOX_TEXT_EXPORT__ = {
-        name: String(args.suggestedName ?? 'XunDuTerminal-export.json'),
+        name: String(args.suggestedName ?? 'RainTerminal-export.json'),
         content: String(args.content ?? ''),
       }
       return `C:/Users/sandbox/Downloads/${sandboxWindow.__XUNDU_SANDBOX_TEXT_EXPORT__.name}` as T

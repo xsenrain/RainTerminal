@@ -1,8 +1,8 @@
-# Security Policy
+﻿# Security Policy
 
 ## Supported Versions
 
-XunDuTerminal is currently pre-release software. Security fixes are applied to the latest commit and the newest published `0.1.x` build only.
+RainTerminal is currently pre-release software. Security fixes are applied to the latest commit and the newest published `0.1.x` build only.
 
 ## Reporting a Vulnerability
 

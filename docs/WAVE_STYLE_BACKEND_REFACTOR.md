@@ -1,8 +1,8 @@
-# Wave-style 后端并发重构计划
+﻿# Wave-style 后端并发重构计划
 
 ## 目标
 
-让 XunDuTerminal 支持像 Wave 一样同时打开大量服务器、终端、文件和监控窗口时仍然流畅。
+让 RainTerminal 支持像 Wave 一样同时打开大量服务器、终端、文件和监控窗口时仍然流畅。
 
 核心原则：
 

@@ -971,11 +971,7 @@ fn launch_app_update(
 
 fn is_allowed_external_url(url: &str) -> bool {
     let normalized = url.trim().to_ascii_lowercase();
-    normalized == "https://xunduyun.com"
-        || normalized.starts_with("https://xunduyun.com/")
-        || normalized == "https://www.xunduyun.com"
-        || normalized.starts_with("https://www.xunduyun.com/")
-        || is_allowed_source_repository_url(&normalized)
+    is_allowed_source_repository_url(&normalized)
         || normalized == QQ_GROUP_ONE_URL
         || normalized == QQ_GROUP_TWO_URL
 }
@@ -994,7 +990,7 @@ fn is_allowed_source_repository_url(url: &str) -> bool {
         || !segments[0]
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        || segments[1] != "xunduterminal"
+        || segments[1] != "rainterminal"
     {
         return false;
     }
@@ -7211,24 +7207,24 @@ mod tests {
     fn update_versions_and_external_urls_are_validated() {
         assert!(parse_update_version("v0.2.0").unwrap() > parse_update_version("0.1.9").unwrap());
         let installer = AppUpdateInstaller {
-            url: "https://github.com/KaiGe7384/XunDuTerminal/releases/download/v0.2.0/XunDuTerminal_0.2.0_x64-setup.exe".into(),
+            url: "https://github.com/xsenrain/RainTerminal/releases/download/v0.2.0/RainTerminal_0.2.0_x64-setup.exe".into(),
             sha256: "4c2a3fb1e65622ed2831b0f23924d74dd200210cd4bb76aa09968b9a976610b8".into(),
             size: 5_860_913,
         };
         assert_eq!(
             validate_app_update_installer(&installer, &parse_update_version("0.2.0").unwrap())
                 .unwrap(),
-            "XunDuTerminal_0.2.0_x64-setup.exe"
+            "RainTerminal_0.2.0_x64-setup.exe"
         );
         let mut invalid_installer = installer.clone();
-        invalid_installer.url = "https://example.com/XunDuTerminal_0.2.0_x64-setup.exe".into();
+        invalid_installer.url = "https://example.com/RainTerminal_0.2.0_x64-setup.exe".into();
         assert!(validate_app_update_installer(
             &invalid_installer,
             &parse_update_version("0.2.0").unwrap()
         )
         .is_err());
         let mut mismatched_installer = installer.clone();
-        mismatched_installer.url = "https://github.com/KaiGe7384/XunDuTerminal/releases/download/v0.3.0/XunDuTerminal_0.3.0_x64-setup.exe".into();
+        mismatched_installer.url = "https://github.com/xsenrain/RainTerminal/releases/download/v0.3.0/RainTerminal_0.3.0_x64-setup.exe".into();
         assert!(validate_app_update_installer(
             &mismatched_installer,
             &parse_update_version("0.2.0").unwrap()
@@ -7241,24 +7237,20 @@ mod tests {
             &parse_update_version("0.2.0").unwrap()
         )
         .is_err());
-        assert!(is_allowed_external_url("https://xunduyun.com/"));
         assert!(is_allowed_external_url(
-            "https://www.xunduyun.com/xunduterminal/download"
-        ));
-        assert!(is_allowed_external_url(
-            "https://github.com/example/XunDuTerminal/releases/latest"
+            "https://github.com/example/RainTerminal/releases/latest"
         ));
         assert!(is_allowed_source_repository_url(
-            "https://github.com/example/XunDuTerminal/releases/tag/v0.2.0"
+            "https://github.com/example/RainTerminal/releases/tag/v0.2.0"
         ));
         assert!(is_allowed_external_url(QQ_GROUP_ONE_URL));
         assert!(is_allowed_external_url(QQ_GROUP_TWO_URL));
-        assert!(!is_allowed_external_url("http://xunduyun.com/"));
+        assert!(!is_allowed_external_url("http://github.com/"));
         assert!(!is_allowed_external_url(
-            "https://xunduyun.com.example.com/"
+            "https://github.com.example.com/"
         ));
         assert!(!is_allowed_source_repository_url(
-            "https://github.com/example/not-xunduterminal/releases/latest"
+            "https://github.com/example/not-rainterminal/releases/latest"
         ));
         assert!(!is_allowed_external_url(
             "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=123456&card_type=group&source=qrcode"
