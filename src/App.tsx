@@ -9145,6 +9145,7 @@ function Inspector({
   const [snippetSearch, setSnippetSearch] = useState('')
   const [draggingCategory, setDraggingCategory] = useState<string | null>(null)
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
+  const draggingCategoryRef = useRef<string | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
@@ -9381,11 +9382,12 @@ function Inspector({
                         if (isUncategorized) return
                         event.dataTransfer.effectAllowed = 'move'
                         event.dataTransfer.setData('text/plain', category)
+                        draggingCategoryRef.current = category
                         setDraggingCategory(category)
                       }}
                       onDragOver={(event) => {
-                        if (isUncategorized || !draggingCategory || draggingCategory === category) return
                         event.preventDefault()
+                        if (isUncategorized || !draggingCategoryRef.current || draggingCategoryRef.current === category) return
                         event.dataTransfer.dropEffect = 'move'
                         if (dragOverCategory !== category) setDragOverCategory(category)
                       }}
@@ -9394,20 +9396,19 @@ function Inspector({
                       }}
                       onDrop={(event) => {
                         event.preventDefault()
-                        if (isUncategorized || !draggingCategory || draggingCategory === category) {
-                          setDraggingCategory(null)
-                          setDragOverCategory(null)
-                          return
-                        }
-                        const fromIndex = sortableCategories.indexOf(draggingCategory)
+                        const from = draggingCategoryRef.current
+                        draggingCategoryRef.current = null
+                        setDraggingCategory(null)
+                        setDragOverCategory(null)
+                        if (isUncategorized || !from || from === category) return
+                        const fromIndex = sortableCategories.indexOf(from)
                         const toIndex = sortableCategories.indexOf(category)
                         if (fromIndex >= 0 && toIndex >= 0 && fromIndex !== toIndex) {
                           onReorderCategories(fromIndex, toIndex)
                         }
-                        setDraggingCategory(null)
-                        setDragOverCategory(null)
                       }}
                       onDragEnd={() => {
+                        draggingCategoryRef.current = null
                         setDraggingCategory(null)
                         setDragOverCategory(null)
                       }}
