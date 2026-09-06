@@ -221,3 +221,15 @@
   - tauriBridge.ts：sandbox mock 增加 inspect_reset_all
 - **验证**：cargo check 通过（无警告）、npm run build 通过；debug exe 被运行中 dev 实例占用未能链接（正常）
 - **commit**：待提交
+
+## 2026-09-07 · 重置按钮收敛为纯巡检级（不影响其他功能）
+
+- **背景**：用户澄清重置只针对自动化巡检，不得影响工作台的终端会话/隧道/传输等其他功能
+- **改动**：
+  - 后端：删除 inspect_reset_all 命令（其断开全部 SSH 会话/隧道/传输/本地 Shell 的行为超出巡检范围）；巡检引擎本身即连即断、无常驻连接池，无需后端清理命令
+  - 前端（App.tsx）：
+    - esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选、命令列表、进度，并发恢复默认 5，仅 toast 提示，不再调用后端、不动工作台连接
+    - 新增 discardInspectResultRef：若重置时巡检仍在执行（invoke 无法中断），返回的结果/错误将被丢弃，不写入界面
+  - tauriBridge.ts：移除 inspect_reset_all mock
+- **验证**：cargo check（无警告）+ npm run build 通过
+- **commit**：待提交

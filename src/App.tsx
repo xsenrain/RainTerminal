@@ -10380,6 +10380,8 @@ function InspectWorkspace({
   const [inspectManualCommand, setInspectManualCommand] = useState('')
   const [inspectTemplatePickerOpen, setInspectTemplatePickerOpen] = useState(false)
   const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
+  // 重置后丢弃本次巡检返回的结果（执行中无法中断，返回时不再写入界面）
+  const discardInspectResultRef = useRef(false)
 
   function openInspectEditor(device?: InspectDevice) {
     if (device) {
@@ -10453,8 +10455,10 @@ function InspectWorkspace({
         commands: commandList,
         concurrency: inspectConcurrency,
       })
+      if (discardInspectResultRef.current) return
       setInspectResults(results)
     } catch (reason) {
+      if (discardInspectResultRef.current) return
       const message = String(reason).replace(/^Error:\s*/i, '')
       setInspectResults([
         {
@@ -10485,25 +10489,21 @@ function InspectWorkspace({
     })
   }
 
-  async function resetInspectWorkspace() {
+  function resetInspectWorkspace() {
     const message = inspectRunning
-      ? t('重置将断开所有 SSH 连接（终端会话、隧道、传输、辅助会话）并清空巡检状态；当前巡检仍在执行中，正在执行的命令可能被中断。确定继续吗？')
-      : t('重置将断开所有 SSH 连接（终端会话、隧道、传输、辅助会话）并清空巡检状态。确定继续吗？')
+      ? t('重置将清空巡检工作台（结果、设备勾选、命令列表）；当前巡检仍在执行中，本次返回的结果会被丢弃，但不会中断正在执行的命令。确定继续吗？')
+      : t('重置将清空巡检工作台（结果、设备勾选、命令列表）。确定继续吗？')
     if (!window.confirm(message)) return
 
-    let closedCount = 0
-    try {
-      closedCount = await invoke<number>('inspect_reset_all')
-    } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
-    }
+    // 标记丢弃本次巡检的返回结果（执行中的 invoke 无法中断，返回后不再写入界面）
+    discardInspectResultRef.current = true
     setSelectedInspectIds(new Set())
     setInspectCommands([])
     setInspectResults(null)
     setInspectProgress(null)
     setInspectConcurrency(5)
     setInspectRunning(false)
-    onNotify(t('重置完成，已断开 {count} 个连接').replace('{count}', String(closedCount)))
+    onNotify(t('巡检工作台已重置'))
   }
 
   function toggleSelectAll() {
