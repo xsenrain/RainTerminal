@@ -9144,10 +9144,14 @@ function Inspector({
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
   const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; category: string } | null>(null)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
 
   useEffect(() => {
     if (!contextMenu && !groupContextMenu) return
-    const handler = (event: MouseEvent) => {
+    const handler = (event: globalThis.MouseEvent) => {
       if (event.button === 2) return
       setContextMenu(null)
       setGroupContextMenu(null)
@@ -9155,10 +9159,6 @@ function Inspector({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [contextMenu, groupContextMenu])
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
   const [noteText, setNoteText] = useState('')
   const commandSet = getQuickCommands(remoteTarget ? 'connected' : 'ready')
 
