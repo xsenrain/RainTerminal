@@ -4345,10 +4345,10 @@ body:has(.app-toast) .file-download-progress {
 /* Floating notice — sticky to top of scroll area, zero height so no layout shift */
 .snippet-float-notice-wrapper {
   position: sticky;
-  top: 8px;
+  top: 0;
   height: 0;
   overflow: visible;
-  z-index: 100;
+  z-index: 9999;
   display: flex;
   justify-content: center;
   pointer-events: none;

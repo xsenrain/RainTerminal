@@ -9153,7 +9153,7 @@ function Inspector({
   const [snippetCategory, setSnippetCategory] = useState('未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
-  const [expandedCategories, setExpandedCategories] = usePersistentExpandedCategories()
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
@@ -13131,29 +13131,6 @@ function usePersistentSnippetCategories() {
   }, [categories])
 
   return [categories, setCategories] as const
-}
-
-function usePersistentExpandedCategories() {
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('xundu.snippets.expanded')
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown
-        if (Array.isArray(parsed)) {
-          return new Set(parsed.filter((c): c is string => typeof c === 'string'))
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return new Set()
-  })
-
-  useEffect(() => {
-    localStorage.setItem('xundu.snippets.expanded', JSON.stringify([...expanded]))
-  }, [expanded])
-
-  return [expanded, setExpanded] as const
 }
 
 function usePersistentSessionNotes() {
