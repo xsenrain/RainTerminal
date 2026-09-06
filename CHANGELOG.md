@@ -4,6 +4,19 @@ All notable changes to RainTerminal will be documented here. The project follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-06
+
+### Added
+
+- Group reordering via right-click context menu: move up, move down, move to top, move to bottom.
+- Reorder state persists across restarts.
+
+### Fixed
+
+- Context menus clipped by drawer overflow; now rendered via React Portal to document body.
+- Context menus not closing when clicking outside; global mousedown listener added.
+- Removed leftover drag handle icons after switching from HTML5 drag-and-drop to right-click reordering.
+
 ## [1.0.0] - 2026-09-06
 
 ### Added

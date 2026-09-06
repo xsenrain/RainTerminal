@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
-  "notes": "RainTerminal 1.0.0：基于 XunDuTerminal 二次开发的正式版，新增网络设备命令模板分类管理、搜索、动态分组等功能。",
-  "releaseUrl": "https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.0",
+  "version": "1.0.1",
+  "notes": "RainTerminal 1.0.1：新增分组右键排序（上移/下移/移至顶部/移至尾部），排序持久化保存；修复右键菜单被抽屉裁剪、点击外部不自动关闭等问题。",
+  "releaseUrl": "https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.1",
   "publishedAt": "2026-09-06T00:00:00Z",
   "windows": {
-    "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.0/RainTerminal_1.0.0_x64-setup.exe",
-    "sha256": "9e1e0c426c643b40743223ec5f1bc27cf1029bac60e631d6ac16273ca1714d1e",
-    "size": 5770958
+    "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.1/RainTerminal_1.0.1_x64-setup.exe",
+    "sha256": "1639ea31c7d5fce4adfd2d23f53d0a89bf0544ccd03011689e32cfa441c647ff",
+    "size": 5770797
   }
 }

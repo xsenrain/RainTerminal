@@ -164,7 +164,7 @@ type AppUpdateDownloadResult = {
   totalBytes: number
 }
 
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '1.0.1'
 
 type AppLocaleContextValue = {
   language: AppLanguage
