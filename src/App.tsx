@@ -9140,7 +9140,7 @@ function Inspector({
   const { t } = useAppLocale()
   const [snippetName, setSnippetName] = useState('')
   const [snippetCommand, setSnippetCommand] = useState('')
-  const [snippetCategory, setSnippetCategory] = useState('未分类')
+  const [snippetCategory, setSnippetCategory] = useState(() => categories.find((c) => c !== '未分类') || '未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
@@ -9341,7 +9341,7 @@ function Inspector({
                   <label className="utility-command-field">
                     <span>{t('分类')}</span>
                     <select value={snippetCategory} onChange={(event) => setSnippetCategory(event.target.value)}>
-                      {categories.map((cat) => (
+                      {categories.filter((cat) => cat !== '未分类').map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>
