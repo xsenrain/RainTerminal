@@ -2238,12 +2238,15 @@ function App() {
   function addCategory(name: string) {
     const trimmed = name.trim()
     if (!trimmed) return
+    if (snippetCategories.includes(trimmed)) {
+      setToast(`分类「${trimmed}」已存在`)
+      return
+    }
     setSnippetCategories((current) => {
-      if (current.includes(trimmed)) return current
       const withoutUncategorized = current.filter((c) => c !== '未分类')
       return [...withoutUncategorized, trimmed, '未分类']
     })
-    setToast(`分类「${trimmed}」已添加`)
+    setToast(`分类「${trimmed}」新增成功`)
   }
 
   function deleteCategory(name: string) {
@@ -2251,11 +2254,14 @@ function App() {
       setToast('「未分类」是默认分类，不可删除')
       return
     }
+    const commandCount = snippets.filter((s) => s.category === name).length
+    if (commandCount > 0) {
+      const confirmed = window.confirm(`分类「${name}」下存在 ${commandCount} 条命令，删除分类将连同命令一起删除，是否继续？`)
+      if (!confirmed) return
+    }
     setSnippetCategories((current) => current.filter((c) => c !== name))
-    setSnippets((current) =>
-      current.map((s) => (s.category === name ? { ...s, category: '未分类' } : s)),
-    )
-    setToast(`分类「${name}」已删除，该分类下的命令已移至「未分类」`)
+    setSnippets((current) => current.filter((s) => s.category !== name))
+    setToast(`分类「${name}」已删除${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}`)
   }
 
   function moveSnippet(id: string, category: string) {
