@@ -15,6 +15,8 @@ use tauri::{AppHandle, Emitter};
 
 /// 读取静默期：网络设备 exec 通道不会 EOF，连续多久无数据视为命令输出结束。
 const READ_QUIET_PERIOD_MS: u64 = 800;
+/// 打开通道 / 执行命令的 API 超时（慢速设备或虚拟机上通道打开可能超过 800ms）。
+const EXEC_API_TIMEOUT_MS: u64 = 10_000;
 /// 单条命令最大输出字节数，超出截断防止内存膨胀。
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
@@ -181,8 +183,6 @@ fn execute_device(
         &device.password,
         device.port,
     )?;
-    // 认证完成后，把 IO 超时缩短为静默期，用于网络设备输出结束判定。
-    session.set_timeout(READ_QUIET_PERIOD_MS as u32);
 
     let mut outputs = Vec::with_capacity(commands.len());
     for command in commands {
@@ -204,6 +204,8 @@ fn execute_one_command(
 ) -> InspectCommandOutput {
     let mut output = String::new();
 
+    // 打开通道与执行命令使用长 API 超时（慢速设备/虚拟机可能超过静默期）。
+    session.set_timeout(EXEC_API_TIMEOUT_MS as u32);
     let channel_result = session.channel_session();
     let mut channel = match channel_result {
         Ok(channel) => channel,
@@ -229,6 +231,9 @@ fn execute_one_command(
         }
         .note_error(&format!("Command exec failed: {error}"));
     }
+
+    // 命令已开始执行，把 API 超时缩短为静默期，用于网络设备输出结束判定。
+    session.set_timeout(READ_QUIET_PERIOD_MS as u32);
 
     let mut buffer = [0u8; 8192];
     loop {
