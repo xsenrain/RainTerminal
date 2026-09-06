@@ -9427,11 +9427,6 @@ function Inspector({
                   ))}
                 </div>
               )}
-              {categoryNotice && (
-                <div className={`snippet-float-notice ${categoryNotice.type}`}>
-                  {categoryNotice.text}
-                </div>
-              )}
             </div>
           )
         })()}
@@ -9514,6 +9509,13 @@ function Inspector({
                   </IconButton>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {categoryNotice && (
+          <div className="snippet-float-notice-wrapper">
+            <div className={`snippet-float-notice ${categoryNotice.type}`}>
+              {categoryNotice.text}
             </div>
           </div>
         )}
