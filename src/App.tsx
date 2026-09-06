@@ -9362,7 +9362,7 @@ function Inspector({
                 </div>
               )}
               {visibleGroups.map(([category, list]) => {
-                const isExpanded = expandedCategories.has(category)
+                const isExpanded = keyword ? true : expandedCategories.has(category)
                 return (
                   <div key={category} className={`snippet-group${isExpanded ? '' : ' collapsed'}`}>
                     <div className="snippet-group-header-row">
