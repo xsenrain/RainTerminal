@@ -9146,6 +9146,7 @@ function Inspector({
   const [expandedCategories, setExpandedCategories] = usePersistentExpandedCategories()
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
+  const [categoryNotice, setCategoryNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
   const [noteText, setNoteText] = useState('')
   const commandSet = getQuickCommands(remoteTarget ? 'connected' : 'ready')
@@ -9178,10 +9179,16 @@ function Inspector({
   function saveCategory() {
     if (!newCategoryName.trim()) return
     const name = newCategoryName.trim()
-    onAddCategory(name)
-    setSnippetCategory(name)
-    setExpandedCategories((prev) => new Set(prev).add(name))
+    if (categories.includes(name)) {
+      setCategoryNotice({ type: 'error', text: `分类「${name}」已存在` })
+    } else {
+      onAddCategory(name)
+      setSnippetCategory(name)
+      setExpandedCategories((prev) => new Set(prev).add(name))
+      setCategoryNotice({ type: 'success', text: `分类「${name}」新增成功` })
+    }
     setNewCategoryName('')
+    window.setTimeout(() => setCategoryNotice(null), 2200)
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9264,7 +9271,7 @@ function Inspector({
             if (!groups.has(c)) groups.set(c, [])
             groups.get(c)!.push(s)
           }
-          const visibleGroups = [...groups.entries()]
+          const visibleGroups = [...groups.entries()].filter(([cat, list]) => cat !== '未分类' || list.length > 0)
           const toggleCategory = (cat: string) =>
             setExpandedCategories((prev) => {
               const next = new Set(prev)
@@ -9313,6 +9320,11 @@ function Inspector({
                       <Plus size={14} />
                     </button>
                   </div>
+                  {categoryNotice && (
+                    <div className={`snippet-category-notice ${categoryNotice.type}`}>
+                      {categoryNotice.text}
+                    </div>
+                  )}
                   <div className="snippet-category-list">
                     {categories.filter((cat) => cat !== '未分类').map((cat) => (
                       <div key={cat} className="snippet-category-row">

@@ -4342,6 +4342,26 @@ body:has(.app-toast) .file-download-progress {
   border-radius: var(--r-sm);
 }
 
+.snippet-category-notice {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.snippet-category-notice.success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.snippet-category-notice.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
 /* Inspector: opaque background + thin scrollbar (prevent terminal bleed-through & layout shift) */
 .inspector {
   background: #14151a;
