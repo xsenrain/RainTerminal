@@ -4342,21 +4342,38 @@ body:has(.app-toast) .file-download-progress {
   border-radius: var(--r-sm);
 }
 
-.snippet-category-notice {
-  margin-bottom: 8px;
-  padding: 6px 10px;
-  border-radius: var(--r-sm);
-  font-size: 11.5px;
-  text-align: center;
+/* Floating notice — does not affect layout */
+.utility-page {
+  position: relative;
 }
 
-.snippet-category-notice.success {
+.snippet-float-notice {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  animation: snippet-notice-in 0.18s ease-out;
+}
+
+@keyframes snippet-notice-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.snippet-float-notice.success {
   background: var(--success-bg);
   color: var(--success);
   border: 1px solid var(--success-border);
 }
 
-.snippet-category-notice.error {
+.snippet-float-notice.error {
   background: var(--danger-bg);
   color: var(--danger);
   border: 1px solid var(--danger-border);

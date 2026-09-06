@@ -955,6 +955,7 @@ function App() {
   const [remoteDesktopProfiles, setRemoteDesktopProfiles, remoteDesktopCredentialState] = usePersistentRemoteDesktopProfiles()
   const [snippets, setSnippets] = usePersistentSnippets()
   const [snippetCategories, setSnippetCategories] = usePersistentSnippetCategories()
+  const [categoryNotice, setCategoryNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [sessionNotes, setSessionNotes] = usePersistentSessionNotes()
   const [remoteAuxConcurrency, setRemoteAuxConcurrency] = usePersistentRemoteAuxConcurrency()
   const [appearance, setAppearance] = usePersistentAppAppearance()
@@ -2239,19 +2240,19 @@ function App() {
     const trimmed = name.trim()
     if (!trimmed) return
     if (snippetCategories.includes(trimmed)) {
-      setToast(`分类「${trimmed}」已存在`)
+      setCategoryNotice({ type: 'error', text: `分类「${trimmed}」已存在` })
       return
     }
     setSnippetCategories((current) => {
       const withoutUncategorized = current.filter((c) => c !== '未分类')
       return [...withoutUncategorized, trimmed, '未分类']
     })
-    setToast(`分类「${trimmed}」新增成功`)
+    setCategoryNotice({ type: 'success', text: `分类「${trimmed}」新增成功` })
   }
 
   function deleteCategory(name: string) {
     if (name === '未分类') {
-      setToast('「未分类」是默认分类，不可删除')
+      setCategoryNotice({ type: 'error', text: '「未分类」是默认分类，不可删除' })
       return
     }
     const commandCount = snippets.filter((s) => s.category === name).length
@@ -2261,7 +2262,7 @@ function App() {
     }
     setSnippetCategories((current) => current.filter((c) => c !== name))
     setSnippets((current) => current.filter((s) => s.category !== name))
-    setToast(`分类「${name}」已删除${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}`)
+    setCategoryNotice({ type: 'success', text: `分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}` })
   }
 
   function moveSnippet(id: string, category: string) {
@@ -2269,6 +2270,12 @@ function App() {
       current.map((s) => (s.id === id ? { ...s, category } : s)),
     )
   }
+
+  useEffect(() => {
+    if (!categoryNotice) return
+    const timer = window.setTimeout(() => setCategoryNotice(null), 2200)
+    return () => window.clearTimeout(timer)
+  }, [categoryNotice])
 
   async function importOpenSshConfig() {
     try {
@@ -2567,6 +2574,7 @@ function App() {
                       onAddCategory={addCategory}
                       onDeleteCategory={deleteCategory}
                       onMoveSnippet={moveSnippet}
+                      categoryNotice={categoryNotice}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -9107,6 +9115,7 @@ function Inspector({
   onAddCategory,
   onDeleteCategory,
   onMoveSnippet,
+  categoryNotice,
   commandHistory,
   onClearHistory,
   notes,
@@ -9128,6 +9137,7 @@ function Inspector({
   onAddCategory: (name: string) => void
   onDeleteCategory: (name: string) => void
   onMoveSnippet: (id: string, category: string) => void
+  categoryNotice: { type: 'success' | 'error'; text: string } | null
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9146,7 +9156,6 @@ function Inspector({
   const [expandedCategories, setExpandedCategories] = usePersistentExpandedCategories()
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
-  const [categoryNotice, setCategoryNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
   const [noteText, setNoteText] = useState('')
   const commandSet = getQuickCommands(remoteTarget ? 'connected' : 'ready')
@@ -9179,16 +9188,12 @@ function Inspector({
   function saveCategory() {
     if (!newCategoryName.trim()) return
     const name = newCategoryName.trim()
-    if (categories.includes(name)) {
-      setCategoryNotice({ type: 'error', text: `分类「${name}」已存在` })
-    } else {
-      onAddCategory(name)
+    onAddCategory(name)
+    if (!categories.includes(name)) {
       setSnippetCategory(name)
       setExpandedCategories((prev) => new Set(prev).add(name))
-      setCategoryNotice({ type: 'success', text: `分类「${name}」新增成功` })
     }
     setNewCategoryName('')
-    window.setTimeout(() => setCategoryNotice(null), 2200)
   }
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
@@ -9320,11 +9325,6 @@ function Inspector({
                       <Plus size={14} />
                     </button>
                   </div>
-                  {categoryNotice && (
-                    <div className={`snippet-category-notice ${categoryNotice.type}`}>
-                      {categoryNotice.text}
-                    </div>
-                  )}
                   <div className="snippet-category-list">
                     {categories.filter((cat) => cat !== '未分类').map((cat) => (
                       <div key={cat} className="snippet-category-row">
@@ -9425,6 +9425,11 @@ function Inspector({
                       {cat}
                     </button>
                   ))}
+                </div>
+              )}
+              {categoryNotice && (
+                <div className={`snippet-float-notice ${categoryNotice.type}`}>
+                  {categoryNotice.text}
                 </div>
               )}
             </div>
