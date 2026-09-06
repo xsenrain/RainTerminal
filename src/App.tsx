@@ -242,6 +242,7 @@ type Snippet = {
   id: string
   name: string
   command: string
+  category?: string
 }
 
 type SessionNote = {
@@ -512,69 +513,71 @@ const remoteQuickCommands: CommandItem[] = [
 
 const defaultSnippets: Snippet[] = [
   // ---- Linux 服务器 ----
-  { id: 'snippet-restart-nginx', name: '重启 Nginx', command: 'systemctl restart nginx' },
-  { id: 'snippet-journal-nginx', name: '查看 Nginx 日志', command: 'journalctl -u nginx -n 120 --no-pager' },
-  { id: 'snippet-docker-stats', name: '容器资源', command: 'docker stats --no-stream' },
+  { id: 'snippet-restart-nginx', name: '重启 Nginx', command: 'systemctl restart nginx', category: 'Linux 服务器' },
+  { id: 'snippet-journal-nginx', name: '查看 Nginx 日志', command: 'journalctl -u nginx -n 120 --no-pager', category: 'Linux 服务器' },
+  { id: 'snippet-docker-stats', name: '容器资源', command: 'docker stats --no-stream', category: 'Linux 服务器' },
   // ---- 通用查询（设备无关）----
-  { id: 'snippet-gen-clock', name: '通用·设备时间', command: 'display clock' },
-  { id: 'snippet-gen-clock-show', name: '通用·当前时间', command: 'show clock' },
+  { id: 'snippet-gen-clock', name: '通用·设备时间', command: 'display clock', category: '通用' },
+  { id: 'snippet-gen-clock-show', name: '通用·当前时间', command: 'show clock', category: '通用' },
   // ---- 华为 VRP（display 系）----
-  { id: 'snippet-hw-version', name: '华为·版本信息', command: 'display version' },
-  { id: 'snippet-hw-running', name: '华为·当前配置', command: 'display current-configuration' },
-  { id: 'snippet-hw-interface', name: '华为·接口状态', command: 'display interface brief' },
-  { id: 'snippet-hw-ip-interface', name: '华为·IP 接口', command: 'display ip interface brief' },
-  { id: 'snippet-hw-cpu', name: '华为·CPU 使用率', command: 'display cpu-usage' },
-  { id: 'snippet-hw-memory', name: '华为·内存使用率', command: 'display memory-usage' },
-  { id: 'snippet-hw-device', name: '华为·设备健康', command: 'display device' },
-  { id: 'snippet-hw-transceiver', name: '华为·光模块信息', command: 'display transceiver interface' },
-  { id: 'snippet-hw-fan', name: '华为·风扇状态', command: 'display fan' },
-  { id: 'snippet-hw-power', name: '华为·电源状态', command: 'display power' },
-  { id: 'snippet-hw-arp', name: '华为·ARP 表', command: 'display arp' },
-  { id: 'snippet-hw-mac', name: '华为·MAC 表', command: 'display mac-address' },
-  { id: 'snippet-hw-lldp', name: '华为·LLDP 邻居', command: 'display lldp neighbor-information' },
-  { id: 'snippet-hw-log', name: '华为·日志缓冲', command: 'display logbuffer' },
+  { id: 'snippet-hw-version', name: '华为·版本信息', command: 'display version', category: '华为' },
+  { id: 'snippet-hw-running', name: '华为·当前配置', command: 'display current-configuration', category: '华为' },
+  { id: 'snippet-hw-interface', name: '华为·接口状态', command: 'display interface brief', category: '华为' },
+  { id: 'snippet-hw-ip-interface', name: '华为·IP 接口', command: 'display ip interface brief', category: '华为' },
+  { id: 'snippet-hw-cpu', name: '华为·CPU 使用率', command: 'display cpu-usage', category: '华为' },
+  { id: 'snippet-hw-memory', name: '华为·内存使用率', command: 'display memory-usage', category: '华为' },
+  { id: 'snippet-hw-device', name: '华为·设备健康', command: 'display device', category: '华为' },
+  { id: 'snippet-hw-transceiver', name: '华为·光模块信息', command: 'display transceiver interface', category: '华为' },
+  { id: 'snippet-hw-fan', name: '华为·风扇状态', command: 'display fan', category: '华为' },
+  { id: 'snippet-hw-power', name: '华为·电源状态', command: 'display power', category: '华为' },
+  { id: 'snippet-hw-arp', name: '华为·ARP 表', command: 'display arp', category: '华为' },
+  { id: 'snippet-hw-mac', name: '华为·MAC 表', command: 'display mac-address', category: '华为' },
+  { id: 'snippet-hw-lldp', name: '华为·LLDP 邻居', command: 'display lldp neighbor-information', category: '华为' },
+  { id: 'snippet-hw-log', name: '华为·日志缓冲', command: 'display logbuffer', category: '华为' },
   // ---- 华三 Comware（display 系）----
-  { id: 'snippet-h3c-version', name: '华三·版本信息', command: 'display version' },
-  { id: 'snippet-h3c-running', name: '华三·当前配置', command: 'display current-configuration' },
-  { id: 'snippet-h3c-interface', name: '华三·接口状态', command: 'display interface brief' },
-  { id: 'snippet-h3c-ip-interface', name: '华三·IP 接口', command: 'display ip interface brief' },
-  { id: 'snippet-h3c-cpu', name: '华三·CPU 使用率', command: 'display cpu-usage' },
-  { id: 'snippet-h3c-memory', name: '华三·内存使用率', command: 'display memory' },
-  { id: 'snippet-h3c-device', name: '华三·设备信息', command: 'display device' },
-  { id: 'snippet-h3c-transceiver', name: '华三·光模块诊断', command: 'display transceiver diagnosis interface' },
-  { id: 'snippet-h3c-fan', name: '华三·风扇状态', command: 'display fan' },
-  { id: 'snippet-h3c-power', name: '华三·电源状态', command: 'display power' },
-  { id: 'snippet-h3c-arp', name: '华三·ARP 表', command: 'display arp' },
-  { id: 'snippet-h3c-mac', name: '华三·MAC 表', command: 'display mac-address' },
-  { id: 'snippet-h3c-lldp', name: '华三·LLDP 邻居', command: 'display lldp neighbor-information' },
-  { id: 'snippet-h3c-manuinfo', name: '华三·设备序列号', command: 'display device manuinfo' },
+  { id: 'snippet-h3c-version', name: '华三·版本信息', command: 'display version', category: '华三' },
+  { id: 'snippet-h3c-running', name: '华三·当前配置', command: 'display current-configuration', category: '华三' },
+  { id: 'snippet-h3c-interface', name: '华三·接口状态', command: 'display interface brief', category: '华三' },
+  { id: 'snippet-h3c-ip-interface', name: '华三·IP 接口', command: 'display ip interface brief', category: '华三' },
+  { id: 'snippet-h3c-cpu', name: '华三·CPU 使用率', command: 'display cpu-usage', category: '华三' },
+  { id: 'snippet-h3c-memory', name: '华三·内存使用率', command: 'display memory', category: '华三' },
+  { id: 'snippet-h3c-device', name: '华三·设备信息', command: 'display device', category: '华三' },
+  { id: 'snippet-h3c-transceiver', name: '华三·光模块诊断', command: 'display transceiver diagnosis interface', category: '华三' },
+  { id: 'snippet-h3c-fan', name: '华三·风扇状态', command: 'display fan', category: '华三' },
+  { id: 'snippet-h3c-power', name: '华三·电源状态', command: 'display power', category: '华三' },
+  { id: 'snippet-h3c-arp', name: '华三·ARP 表', command: 'display arp', category: '华三' },
+  { id: 'snippet-h3c-mac', name: '华三·MAC 表', command: 'display mac-address', category: '华三' },
+  { id: 'snippet-h3c-lldp', name: '华三·LLDP 邻居', command: 'display lldp neighbor-information', category: '华三' },
+  { id: 'snippet-h3c-manuinfo', name: '华三·设备序列号', command: 'display device manuinfo', category: '华三' },
   // ---- 锐捷 RGOS（show 系）----
-  { id: 'snippet-rg-version', name: '锐捷·版本信息', command: 'show version' },
-  { id: 'snippet-rg-running', name: '锐捷·运行配置', command: 'show running-config' },
-  { id: 'snippet-rg-interface', name: '锐捷·接口状态', command: 'show interface status' },
-  { id: 'snippet-rg-ip-interface', name: '锐捷·IP 接口', command: 'show ip interface brief' },
-  { id: 'snippet-rg-cpu', name: '锐捷·CPU 使用率', command: 'show cpu' },
-  { id: 'snippet-rg-memory', name: '锐捷·内存使用率', command: 'show memory' },
-  { id: 'snippet-rg-arp', name: '锐捷·ARP 表', command: 'show arp' },
-  { id: 'snippet-rg-mac', name: '锐捷·MAC 表', command: 'show mac-address-table' },
-  { id: 'snippet-rg-vlan', name: '锐捷·VLAN 列表', command: 'show vlan' },
-  { id: 'snippet-rg-lldp', name: '锐捷·LLDP 邻居', command: 'show lldp neighbors' },
-  { id: 'snippet-rg-route', name: '锐捷·路由表', command: 'show ip route' },
-  { id: 'snippet-rg-inventory', name: '锐捷·设备序列号', command: 'show inventory' },
+  { id: 'snippet-rg-version', name: '锐捷·版本信息', command: 'show version', category: '锐捷' },
+  { id: 'snippet-rg-running', name: '锐捷·运行配置', command: 'show running-config', category: '锐捷' },
+  { id: 'snippet-rg-interface', name: '锐捷·接口状态', command: 'show interface status', category: '锐捷' },
+  { id: 'snippet-rg-ip-interface', name: '锐捷·IP 接口', command: 'show ip interface brief', category: '锐捷' },
+  { id: 'snippet-rg-cpu', name: '锐捷·CPU 使用率', command: 'show cpu', category: '锐捷' },
+  { id: 'snippet-rg-memory', name: '锐捷·内存使用率', command: 'show memory', category: '锐捷' },
+  { id: 'snippet-rg-arp', name: '锐捷·ARP 表', command: 'show arp', category: '锐捷' },
+  { id: 'snippet-rg-mac', name: '锐捷·MAC 表', command: 'show mac-address-table', category: '锐捷' },
+  { id: 'snippet-rg-vlan', name: '锐捷·VLAN 列表', command: 'show vlan', category: '锐捷' },
+  { id: 'snippet-rg-lldp', name: '锐捷·LLDP 邻居', command: 'show lldp neighbors', category: '锐捷' },
+  { id: 'snippet-rg-route', name: '锐捷·路由表', command: 'show ip route', category: '锐捷' },
+  { id: 'snippet-rg-inventory', name: '锐捷·设备序列号', command: 'show inventory', category: '锐捷' },
   // ---- 中兴 ZXR10（show 系）----
-  { id: 'snippet-zte-version', name: '中兴·版本信息', command: 'show version' },
-  { id: 'snippet-zte-running', name: '中兴·运行配置', command: 'show running-config' },
-  { id: 'snippet-zte-interface', name: '中兴·接口状态', command: 'show interface brief' },
-  { id: 'snippet-zte-ip-interface', name: '中兴·IP 接口', command: 'show ip interface brief' },
-  { id: 'snippet-zte-cpu', name: '中兴·CPU 使用率', command: 'show cpu' },
-  { id: 'snippet-zte-memory', name: '中兴·内存使用率', command: 'show memory' },
-  { id: 'snippet-zte-arp', name: '中兴·ARP 表', command: 'show arp' },
-  { id: 'snippet-zte-mac', name: '中兴·MAC 表', command: 'show mac-address' },
-  { id: 'snippet-zte-vlan', name: '中兴·VLAN 列表', command: 'show vlan' },
-  { id: 'snippet-zte-log', name: '中兴·日志缓冲', command: 'show logging buffer' },
-  { id: 'snippet-zte-route', name: '中兴·路由表', command: 'show ip route' },
-  { id: 'snippet-zte-transceiver', name: '中兴·光模块信息', command: 'show interface transceiver' },
+  { id: 'snippet-zte-version', name: '中兴·版本信息', command: 'show version', category: '中兴' },
+  { id: 'snippet-zte-running', name: '中兴·运行配置', command: 'show running-config', category: '中兴' },
+  { id: 'snippet-zte-interface', name: '中兴·接口状态', command: 'show interface brief', category: '中兴' },
+  { id: 'snippet-zte-ip-interface', name: '中兴·IP 接口', command: 'show ip interface brief', category: '中兴' },
+  { id: 'snippet-zte-cpu', name: '中兴·CPU 使用率', command: 'show cpu', category: '中兴' },
+  { id: 'snippet-zte-memory', name: '中兴·内存使用率', command: 'show memory', category: '中兴' },
+  { id: 'snippet-zte-arp', name: '中兴·ARP 表', command: 'show arp', category: '中兴' },
+  { id: 'snippet-zte-mac', name: '中兴·MAC 表', command: 'show mac-address', category: '中兴' },
+  { id: 'snippet-zte-vlan', name: '中兴·VLAN 列表', command: 'show vlan', category: '中兴' },
+  { id: 'snippet-zte-log', name: '中兴·日志缓冲', command: 'show logging buffer', category: '中兴' },
+  { id: 'snippet-zte-route', name: '中兴·路由表', command: 'show ip route', category: '中兴' },
+  { id: 'snippet-zte-transceiver', name: '中兴·光模块信息', command: 'show interface transceiver', category: '中兴' },
 ]
+
+const SNIPPET_CATEGORIES = ['Linux 服务器', '华为', '华三', '锐捷', '中兴', '通用', '未分类'] as const
 
 const TERMINAL_WRITE_CHUNK_SIZE = 12 * 1024
 const TERMINAL_WRITE_QUEUE_LIMIT = 1024 * 1024
@@ -9087,7 +9090,10 @@ function Inspector({
   const { t } = useAppLocale()
   const [snippetName, setSnippetName] = useState('')
   const [snippetCommand, setSnippetCommand] = useState('')
+  const [snippetCategory, setSnippetCategory] = useState('未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
+  const [snippetSearch, setSnippetSearch] = useState('')
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
   const [noteText, setNoteText] = useState('')
   const commandSet = getQuickCommands(remoteTarget ? 'connected' : 'ready')
 
@@ -9098,9 +9104,10 @@ function Inspector({
 
   function saveSnippet() {
     if (!snippetName.trim() || !snippetCommand.trim()) return
-    onAddSnippet({ name: snippetName, command: snippetCommand })
+    onAddSnippet({ name: snippetName, command: snippetCommand, category: snippetCategory })
     setSnippetName('')
     setSnippetCommand('')
+    setSnippetCategory('未分类')
     setSnippetEditorOpen(false)
   }
 
@@ -9163,55 +9170,113 @@ function Inspector({
           </div>
         )}
 
-        {activeTab === 'snippets' && (
-          <div className="utility-page">
-            <div className="utility-section-head utility-page-intro">
-              <div>
-                <strong>{t('保存经常使用的命令')}</strong>
-                <span>{t('点击使用后会先回到运行页，不会直接执行。')}</span>
+        {activeTab === 'snippets' && (() => {
+          const keyword = snippetSearch.trim().toLowerCase()
+          const filtered = keyword
+            ? snippets.filter((s) =>
+                s.name.toLowerCase().includes(keyword) ||
+                s.command.toLowerCase().includes(keyword) ||
+                (s.category || '未分类').toLowerCase().includes(keyword),
+              )
+            : snippets
+          const groups = new Map<string, Snippet[]>()
+          for (const cat of SNIPPET_CATEGORIES) groups.set(cat, [])
+          for (const s of filtered) {
+            const c = s.category || '未分类'
+            if (!groups.has(c)) groups.set(c, [])
+            groups.get(c)!.push(s)
+          }
+          const visibleGroups = [...groups.entries()].filter(([, list]) => list.length > 0)
+          const toggleCategory = (cat: string) =>
+            setCollapsedCategories((prev) => {
+              const next = new Set(prev)
+              if (next.has(cat)) next.delete(cat)
+              else next.add(cat)
+              return next
+            })
+          return (
+            <div className="utility-page">
+              <div className="utility-section-head utility-page-intro">
+                <div>
+                  <strong>{t('保存经常使用的命令')}</strong>
+                  <span>{t('点击使用后会先回到运行页，不会直接执行。')}</span>
+                </div>
+                <button className="utility-text-button" type="button" onClick={() => setSnippetEditorOpen((current) => !current)}>
+                  {snippetEditorOpen ? <X size={13} /> : <Plus size={13} />}
+                  {t(snippetEditorOpen ? '取消' : '新建')}
+                </button>
               </div>
-              <button className="utility-text-button" type="button" onClick={() => setSnippetEditorOpen((current) => !current)}>
-                {snippetEditorOpen ? <X size={13} /> : <Plus size={13} />}
-                {t(snippetEditorOpen ? '取消' : '新建')}
-              </button>
-            </div>
-            {snippetEditorOpen && <div className="snippet-editor utility-editor">
-              <EditableField label={t('名称')} value={snippetName} onChange={setSnippetName} />
-              <label className="utility-command-field">
-                <span>{t('命令')}</span>
-                <textarea
-                  value={snippetCommand}
-                  onChange={(event) => setSnippetCommand(event.target.value)}
-                  placeholder={t('输入要保存的命令')}
-                />
-              </label>
-              <button className="utility-primary-button" type="button" onClick={saveSnippet} disabled={!snippetName.trim() || !snippetCommand.trim()}>
-                <Save size={14} />
-                {t('保存命令')}
-              </button>
-            </div>}
-            <div className="snippet-list">
-              {snippets.length === 0 && (
+              <input
+                className="snippet-search"
+                type="text"
+                value={snippetSearch}
+                onChange={(event) => setSnippetSearch(event.target.value)}
+                placeholder={t('搜索命令')}
+              />
+              {snippetEditorOpen && (
+                <div className="snippet-editor utility-editor">
+                  <EditableField label={t('名称')} value={snippetName} onChange={setSnippetName} />
+                  <label className="utility-command-field">
+                    <span>{t('命令')}</span>
+                    <textarea
+                      value={snippetCommand}
+                      onChange={(event) => setSnippetCommand(event.target.value)}
+                      placeholder={t('输入要保存的命令')}
+                    />
+                  </label>
+                  <label className="utility-command-field">
+                    <span>{t('分类')}</span>
+                    <select value={snippetCategory} onChange={(event) => setSnippetCategory(event.target.value)}>
+                      {SNIPPET_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className="utility-primary-button" type="button" onClick={saveSnippet} disabled={!snippetName.trim() || !snippetCommand.trim()}>
+                    <Save size={14} />
+                    {t('保存命令')}
+                  </button>
+                </div>
+              )}
+              {visibleGroups.length === 0 && (
                 <div className="utility-empty">
                   <Star size={18} />
                   <strong>{t('还没有常用命令')}</strong>
                   <span>{t('点击右上角的新建开始添加。')}</span>
                 </div>
               )}
-              {snippets.map((snippet) => (
-                <div className="snippet-item" key={snippet.id}>
-                  <button type="button" onClick={() => prepareCommand(snippet.command)} title={t('使用此命令')}>
-                    <strong>{snippet.name}</strong>
-                    <span>{snippet.command}</span>
-                  </button>
-                  <IconButton label={t('删除命令')} onClick={() => onDeleteSnippet(snippet.id)}>
-                    <Trash2 size={14} />
-                  </IconButton>
-                </div>
-              ))}
+              {visibleGroups.map(([category, list]) => {
+                const collapsed = collapsedCategories.has(category)
+                return (
+                  <div key={category} className={`snippet-group${collapsed ? ' collapsed' : ''}`}>
+                    <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
+                      <span className="snippet-group-arrow">{collapsed ? '▸' : '▾'}</span>
+                      <strong>{category}</strong>
+                      <span className="snippet-category-count">{list.length}</span>
+                    </button>
+                    {!collapsed && (
+                      <div className="snippet-list">
+                        {list.map((snippet) => (
+                          <div className="snippet-item" key={snippet.id}>
+                            <button type="button" onClick={() => prepareCommand(snippet.command)} title={t('使用此命令')}>
+                              <strong>{snippet.name}</strong>
+                              <span>{snippet.command}</span>
+                            </button>
+                            <IconButton label={t('删除命令')} onClick={() => onDeleteSnippet(snippet.id)}>
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {activeTab === 'history' && (
           <div className="utility-page">
@@ -12447,6 +12512,7 @@ function normalizeSnippet(value: unknown): Snippet | null {
     id: typeof source.id === 'string' && source.id.trim() ? source.id.trim() : crypto.randomUUID(),
     name,
     command,
+    category: typeof source.category === 'string' && source.category.trim() ? source.category.trim() : '未分类',
   }
 }
 
