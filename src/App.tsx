@@ -257,6 +257,8 @@ type InspectCommandOutput = {
   command: string
   output: string
   success: boolean
+  health: 'ok' | 'warn' | 'critical' | string
+  issues: string[]
 }
 
 type InspectExecResult = {
@@ -266,6 +268,7 @@ type InspectExecResult = {
   error?: string | null
   outputs: InspectCommandOutput[]
   durationMs: number
+  health: 'ok' | 'warn' | 'critical' | string
 }
 
 type DockPanel = 'servers' | 'local' | InspectorTab | null
@@ -9358,6 +9361,7 @@ function Inspector({
           error: message,
           outputs: [],
           durationMs: 0,
+          health: 'critical',
         },
       ])
     } finally {
@@ -10036,21 +10040,41 @@ function Inspector({
                         ? `${t('失败')}：${inspectResults.filter((r) => !r.success).length}`
                         : t('全部成功')}
                     </span>
+                    {(() => {
+                      const critical = inspectResults.filter((r) => r.health === 'critical').length
+                      const warn = inspectResults.filter((r) => r.health === 'warn').length
+                      const ok = inspectResults.filter((r) => r.health === 'ok').length
+                      return (
+                        <span className="inspect-results-health">
+                          {ok > 0 && <em className="health-ok">{t('正常')} {ok}</em>}
+                          {warn > 0 && <em className="health-warn">{t('警告')} {warn}</em>}
+                          {critical > 0 && <em className="health-critical">{t('严重')} {critical}</em>}
+                        </span>
+                      )
+                    })()}
                   </div>
                   {inspectResults.map((result) => (
-                    <div className={`inspect-result-item ${result.success ? 'ok' : 'fail'}`} key={`${result.host}-${result.deviceName}`}>
+                    <div className={`inspect-result-item ${result.health === 'ok' ? 'ok' : result.health === 'warn' ? 'warn' : 'fail'}`} key={`${result.host}-${result.deviceName}`}>
                       <div className="inspect-result-header">
-                        <span className={`inspect-result-dot ${result.success ? 'ok' : 'fail'}`} />
+                        <span className={`inspect-result-dot ${result.health === 'ok' ? 'ok' : result.health === 'warn' ? 'warn' : 'fail'}`} />
                         <strong>{result.deviceName}</strong>
                         <em>{result.host}</em>
+                        <em className={`inspect-health-badge health-${result.health}`}>
+                          {result.health === 'ok' ? t('正常') : result.health === 'warn' ? t('警告') : result.health === 'critical' ? t('严重') : result.health}
+                        </em>
                         <span className="inspect-result-time">{(result.durationMs / 1000).toFixed(1)}s</span>
                       </div>
                       {!result.success && result.error && <div className="inspect-result-error">{result.error}</div>}
                       {result.outputs.map((output, index) => (
-                        <details className="inspect-command-output" key={index} open={!output.success}>
+                        <details className="inspect-command-output" key={index} open={!output.success || output.health === 'critical'}>
                           <summary>
-                            <span className={`inspect-result-dot ${output.success ? 'ok' : 'fail'}`} />
+                            <span className={`inspect-result-dot ${output.health === 'ok' ? 'ok' : output.health === 'warn' ? 'warn' : 'fail'}`} />
                             {output.command}
+                            {output.issues.length > 0 && (
+                              <em className="inspect-command-issues">
+                                {output.issues.map((issue) => `⚠ ${issue}`).join(' · ')}
+                              </em>
+                            )}
                           </summary>
                           <pre>{output.output || t('（无输出）')}</pre>
                         </details>

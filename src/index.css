@@ -6463,3 +6463,74 @@ body.native-window-drag-active .monitor-tabs button {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ============ 巡检故障判断 ============ */
+.inspect-results-health {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.inspect-results-health em {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.health-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.health-warn {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+}
+
+.health-critical {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.inspect-result-item.warn {
+  border-left: 3px solid #f59e0b;
+}
+
+.inspect-result-dot.warn {
+  background: #f59e0b;
+}
+
+.inspect-health-badge {
+  font-style: normal;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 650;
+}
+
+.inspect-health-badge.health-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.inspect-health-badge.health-warn {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+}
+
+.inspect-health-badge.health-critical {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.inspect-command-issues {
+  font-style: normal;
+  font-size: 10px;
+  color: #b45309;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}

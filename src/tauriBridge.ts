@@ -187,12 +187,15 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
           success: true,
           error: null,
           durationMs: 1200,
+          health: 'ok',
           outputs: commands.map((command, index) => {
             const cmd = command as { name?: unknown; command?: unknown }
             return {
               command: String(cmd.name ?? `命令${index + 1}`),
               output: `[模拟输出] ${String(cmd.command ?? '')}\n命令执行成功，返回示例结果。`,
               success: true,
+              health: 'ok',
+              issues: [] as string[],
             }
           }),
         }
