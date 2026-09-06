@@ -7,7 +7,11 @@
 use crate::connect_interactive_ssh_session;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::thread;
 use std::time::Instant;
+use tauri::{AppHandle, Emitter};
 
 /// 读取静默期：网络设备 exec 通道不会 EOF，连续多久无数据视为命令输出结束。
 const READ_QUIET_PERIOD_MS: u64 = 800;
@@ -46,7 +50,7 @@ pub struct InspectCommandOutput {
     pub issues: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectExecResult {
     pub device_name: String,
@@ -59,41 +63,99 @@ pub struct InspectExecResult {
     pub health: String,
 }
 
-/// 批量在设备上依次执行命令（当前串行，单线程足够 MVP；并发在后续阶段加入）。
+/// 单台设备完成时通过 `inspect-progress` 事件推送。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct InspectProgress {
+    current: usize,
+    total: usize,
+    device_name: String,
+}
+
+/// 批量在设备上并发执行命令。
+/// - `concurrency`：并发设备数（1-10，自动收敛）
+/// - 每完成一台设备推送 `inspect-progress` 事件
+/// - 单设备失败自动重试一次
 #[tauri::command]
 pub fn batch_execute_inspect(
+    app: AppHandle,
     devices: Vec<InspectDeviceInput>,
     commands: Vec<InspectCommandInput>,
+    concurrency: u32,
 ) -> Vec<InspectExecResult> {
-    devices
-        .iter()
-        .map(|device| {
-            let started = Instant::now();
-            match execute_device(device, &commands) {
-                Ok(outputs) => {
-                    let health = aggregate_health(&outputs);
-                    InspectExecResult {
+    let total = devices.len();
+    if total == 0 {
+        return Vec::new();
+    }
+    let workers = (concurrency.clamp(1, 10) as usize).min(total);
+    let results: Mutex<Vec<Option<InspectExecResult>>> = Mutex::new(vec![None; total]);
+    let next_index = AtomicUsize::new(0);
+    let done_count = AtomicUsize::new(0);
+    let worker_apps: Vec<AppHandle> = (0..workers).map(|_| app.clone()).collect();
+
+    thread::scope(|scope| {
+        for worker_app in &worker_apps {
+            scope.spawn(|| loop {
+                let index = next_index.fetch_add(1, Ordering::SeqCst);
+                if index >= total {
+                    break;
+                }
+                let device = &devices[index];
+                let started = Instant::now();
+                let result = match execute_device_with_retry(device, &commands) {
+                    Ok(outputs) => {
+                        let health = aggregate_health(&outputs);
+                        InspectExecResult {
+                            device_name: device.name.clone(),
+                            host: device.host.clone(),
+                            success: true,
+                            error: None,
+                            outputs,
+                            duration_ms: started.elapsed().as_millis() as u64,
+                            health,
+                        }
+                    }
+                    Err(error) => InspectExecResult {
                         device_name: device.name.clone(),
                         host: device.host.clone(),
-                        success: true,
-                        error: None,
-                        outputs,
+                        success: false,
+                        error: Some(error),
+                        outputs: Vec::new(),
                         duration_ms: started.elapsed().as_millis() as u64,
-                        health,
-                    }
-                }
-                Err(error) => InspectExecResult {
-                    device_name: device.name.clone(),
-                    host: device.host.clone(),
-                    success: false,
-                    error: Some(error),
-                    outputs: Vec::new(),
-                    duration_ms: started.elapsed().as_millis() as u64,
-                    health: "critical".to_string(),
-                },
-            }
-        })
+                        health: "critical".to_string(),
+                    },
+                };
+                results.lock().unwrap()[index] = Some(result);
+                let done = done_count.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = worker_app.emit(
+                    "inspect-progress",
+                    InspectProgress {
+                        current: done,
+                        total,
+                        device_name: device.name.clone(),
+                    },
+                );
+            });
+        }
+    });
+
+    results
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|result| result.unwrap())
         .collect()
+}
+
+/// 连接失败时自动重试一次（网络抖动 / 首连慢的常见场景）。
+fn execute_device_with_retry(
+    device: &InspectDeviceInput,
+    commands: &[InspectCommandInput],
+) -> Result<Vec<InspectCommandOutput>, String> {
+    match execute_device(device, commands) {
+        Ok(outputs) => Ok(outputs),
+        Err(_) => execute_device(device, commands),
+    }
 }
 
 /// 设备健康 = 全部命令中最差等级。

@@ -6534,3 +6534,70 @@ body.native-window-drag-active .monitor-tabs button {
   white-space: nowrap;
   max-width: 60%;
 }
+
+/* ============ 巡检增强：并发/进度/导出/导入 ============ */
+.inspect-exec-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inspect-concurrency {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.inspect-concurrency input {
+  width: 46px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 11.5px;
+}
+
+.inspect-concurrency input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.inspect-progress-track {
+  flex: 1;
+  min-width: 80px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.inspect-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+.inspect-export-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.inspect-import-row {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inspect-import-hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}

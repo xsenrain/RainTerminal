@@ -6311,7 +6311,11 @@ fn atomic_write_file(path: &Path, content: &[u8]) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn save_text_export(suggested_name: String, content: String) -> Result<Option<String>, String> {
+fn save_text_export(
+    suggested_name: String,
+    content: String,
+    filter: Option<String>,
+) -> Result<Option<String>, String> {
     if content.len() > MAX_TEXT_FILE_BYTES {
         return Err("Export content exceeds 8 MiB".into());
     }
@@ -6320,8 +6324,13 @@ fn save_text_export(suggested_name: String, content: String) -> Result<Option<St
         .map(|name| name.to_string_lossy().to_string())
         .filter(|name| !name.trim().is_empty())
         .unwrap_or_else(|| "RainTerminal-export.json".into());
+    let (filter_name, extensions): (&str, &[&str]) = match filter.as_deref() {
+        Some("csv") => ("CSV", &["csv"][..]),
+        Some("txt") => ("Text", &["txt"][..]),
+        _ => ("JSON", &["json"][..]),
+    };
     let Some(path) = rfd::FileDialog::new()
-        .add_filter("JSON", &["json"])
+        .add_filter(filter_name, extensions)
         .set_file_name(&safe_name)
         .save_file()
     else {
@@ -6332,9 +6341,14 @@ fn save_text_export(suggested_name: String, content: String) -> Result<Option<St
 }
 
 #[tauri::command]
-fn open_text_import() -> Result<Option<String>, String> {
+fn open_text_import(filter: Option<String>) -> Result<Option<String>, String> {
+    let (filter_name, extensions): (&str, &[&str]) = match filter.as_deref() {
+        Some("csv") => ("CSV", &["csv"][..]),
+        Some("txt") => ("Text", &["txt"][..]),
+        _ => ("JSON", &["json"][..]),
+    };
     let Some(path) = rfd::FileDialog::new()
-        .add_filter("JSON", &["json"])
+        .add_filter(filter_name, extensions)
         .pick_file()
     else {
         return Ok(None);

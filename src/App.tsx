@@ -2618,6 +2618,7 @@ function App() {
                       onAddInspectDevice={addInspectDevice}
                       onUpdateInspectDevice={updateInspectDevice}
                       onDeleteInspectDevice={deleteInspectDevice}
+                      onNotify={(message) => setToast(message)}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -9164,6 +9165,7 @@ function Inspector({
   onAddInspectDevice,
   onUpdateInspectDevice,
   onDeleteInspectDevice,
+  onNotify,
   commandHistory,
   onClearHistory,
   notes,
@@ -9190,6 +9192,7 @@ function Inspector({
   onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
   onUpdateInspectDevice: (id: string, patch: Partial<Omit<InspectDevice, 'id'>>) => void
   onDeleteInspectDevice: (id: string) => void
+  onNotify: (message: string) => void
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9228,6 +9231,8 @@ function Inspector({
   const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
   const [inspectRunning, setInspectRunning] = useState(false)
   const [inspectResults, setInspectResults] = useState<InspectExecResult[] | null>(null)
+  const [inspectConcurrency, setInspectConcurrency] = useState(5)
+  const [inspectProgress, setInspectProgress] = useState<{ current: number; total: number } | null>(null)
 
   useEffect(() => {
     if (!contextMenu && !groupContextMenu) return
@@ -9338,6 +9343,7 @@ function Inspector({
 
     setInspectRunning(true)
     setInspectResults(null)
+    setInspectProgress({ current: 0, total: selectedDevices.length })
     try {
       const results = await invoke<InspectExecResult[]>('batch_execute_inspect', {
         devices: selectedDevices.map((d) => ({
@@ -9349,6 +9355,7 @@ function Inspector({
           vendor: d.vendor,
         })),
         commands: commandList,
+        concurrency: inspectConcurrency,
       })
       setInspectResults(results)
     } catch (reason) {
@@ -9366,6 +9373,7 @@ function Inspector({
       ])
     } finally {
       setInspectRunning(false)
+      setInspectProgress(null)
     }
   }
 
@@ -9412,6 +9420,142 @@ function Inspector({
   function addSnippetToInspect(snippet: Snippet) {
     addInspectCommand(snippet.name, snippet.command)
   }
+
+  function escapeCsvCell(value: string): string {
+    if (/[",\n\r]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`
+    }
+    return value
+  }
+
+  function healthLabel(health: string): string {
+    return health === 'ok' ? t('正常') : health === 'warn' ? t('警告') : health === 'critical' ? t('严重') : health
+  }
+
+  async function exportInspectResults(format: 'json' | 'csv') {
+    if (!inspectResults) return
+    const date = new Date().toISOString().slice(0, 10)
+    try {
+      if (format === 'json') {
+        await invoke('save_text_export', {
+          suggestedName: `巡检报告-${date}.json`,
+          content: JSON.stringify(inspectResults, null, 2),
+          filter: 'json',
+        })
+      } else {
+        const header = ['设备名称', '主机', '健康状态', '执行结果', '耗时(秒)', '问题'].map(escapeCsvCell).join(',')
+        const rows = inspectResults.map((result) => {
+          const issues = result.outputs.flatMap((output) => output.issues).join('; ')
+          return [result.deviceName, result.host, healthLabel(result.health), result.success ? t('成功') : t('失败'), (result.durationMs / 1000).toFixed(1), issues]
+            .map(escapeCsvCell)
+            .join(',')
+        })
+        // 加 UTF-8 BOM，避免 Excel 打开乱码
+        await invoke('save_text_export', {
+          suggestedName: `巡检汇总-${date}.csv`,
+          content: `\uFEFF${[header, ...rows].join('\r\n')}`,
+          filter: 'csv',
+        })
+      }
+    } catch (reason) {
+      onNotify(`导出失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function importInspectDevicesCsv() {
+    try {
+      const text = await invoke<string | null>('open_text_import', { filter: 'csv' })
+      if (!text) return
+      const rows = parseCsvRows(text.replace(/^\uFEFF/, ''))
+      if (rows.length === 0) {
+        onNotify(t('CSV 文件为空'))
+        return
+      }
+      const header = rows[0].map((cell) => cell.trim().toLowerCase())
+      const nameIndex = header.indexOf('name')
+      const hostIndex = header.indexOf('host')
+      const portIndex = header.indexOf('port')
+      const usernameIndex = header.indexOf('username')
+      const passwordIndex = header.indexOf('password')
+      const vendorIndex = header.indexOf('vendor')
+      const remarkIndex = header.indexOf('remark')
+      if (hostIndex < 0) {
+        onNotify(t('CSV 缺少 host 列'))
+        return
+      }
+      let added = 0
+      for (const row of rows.slice(1)) {
+        const host = (row[hostIndex] ?? '').trim()
+        if (!host) continue
+        const vendor = vendorIndex >= 0 ? (row[vendorIndex] ?? '').trim().toLowerCase() : 'linux'
+        onAddInspectDevice({
+          name: (nameIndex >= 0 ? row[nameIndex] ?? '' : '').trim() || host,
+          host,
+          port: portIndex >= 0 ? Number(row[portIndex]) || 22 : 22,
+          username: (usernameIndex >= 0 ? row[usernameIndex] ?? '' : '').trim(),
+          password: (passwordIndex >= 0 ? row[passwordIndex] ?? '' : '').trim(),
+          vendor: (INSPECT_VENDORS as readonly string[]).includes(vendor) ? vendor : 'linux',
+          remark: (remarkIndex >= 0 ? row[remarkIndex] ?? '' : '').trim(),
+        })
+        added += 1
+      }
+      onNotify(`${t('CSV 导入成功')}：${added} 台`)
+    } catch (reason) {
+      onNotify(`CSV 导入失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  function parseCsvRows(text: string): string[][] {
+    const rows: string[][] = []
+    let row: string[] = []
+    let cell = ''
+    let inQuotes = false
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i]
+      if (inQuotes) {
+        if (char === '"') {
+          if (text[i + 1] === '"') {
+            cell += '"'
+            i += 1
+          } else {
+            inQuotes = false
+          }
+        } else {
+          cell += char
+        }
+      } else if (char === '"') {
+        inQuotes = true
+      } else if (char === ',') {
+        row.push(cell)
+        cell = ''
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && text[i + 1] === '\n') i += 1
+        row.push(cell)
+        cell = ''
+        rows.push(row)
+        row = []
+      } else {
+        cell += char
+      }
+    }
+    if (cell.length > 0 || row.length > 0) {
+      row.push(cell)
+      rows.push(row)
+    }
+    return rows
+  }
+
+  useEffect(() => {
+    const unlistenTask = listen<{ current: number; total: number; deviceName: string }>(
+      'inspect-progress',
+      (event) => {
+        setInspectProgress({ current: event.payload.current, total: event.payload.total })
+      },
+    ).catch(() => () => undefined)
+    return () => {
+      void unlistenTask.then((unlisten) => unlisten())
+    }
+  }, [])
 
   function openContextMenu(event: React.MouseEvent, snippetId: string) {
     event.preventDefault()
@@ -10019,15 +10163,56 @@ function Inspector({
                 </div>
               )}
 
-              <button
-                className="utility-primary-button"
-                type="button"
-                onClick={runInspectBatch}
-                disabled={inspectRunning || selectedInspectIds.size === 0 || inspectCommands.length === 0}
-              >
-                <Activity size={14} />
-                {inspectRunning ? t('执行中…') : `${t('执行')} (${selectedInspectIds.size})`}
-              </button>
+              <div className="inspect-exec-bar">
+                <label className="inspect-concurrency">
+                  <span>{t('并发')}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={inspectConcurrency}
+                    onChange={(event) => setInspectConcurrency(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
+                  />
+                </label>
+                <button
+                  className="utility-primary-button"
+                  type="button"
+                  onClick={runInspectBatch}
+                  disabled={inspectRunning || selectedInspectIds.size === 0 || inspectCommands.length === 0}
+                >
+                  <Activity size={14} />
+                  {inspectRunning
+                    ? inspectProgress
+                      ? `${t('执行中…')} ${inspectProgress.current}/${inspectProgress.total}`
+                      : t('执行中…')
+                    : `${t('执行')} (${selectedInspectIds.size})`}
+                </button>
+                {inspectRunning && inspectProgress && (
+                  <div className="inspect-progress-track">
+                    <div
+                      className="inspect-progress-fill"
+                      style={{ width: `${(inspectProgress.current / Math.max(1, inspectProgress.total)) * 100}%` }}
+                    />
+                  </div>
+                )}
+                {inspectResults && !inspectRunning && (
+                  <div className="inspect-export-actions">
+                    <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('json')}>
+                      {t('导出 JSON')}
+                    </button>
+                    <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('csv')}>
+                      {t('导出 CSV')}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="inspect-import-row">
+                <button className="utility-text-button" type="button" onClick={() => void importInspectDevicesCsv()}>
+                  {t('从 CSV 导入设备')}
+                </button>
+                <span className="inspect-import-hint">{t('CSV 列：name,host,port,username,password,vendor,remark')}</span>
+              </div>
 
               {inspectResults && (
                 <div className="inspect-results">

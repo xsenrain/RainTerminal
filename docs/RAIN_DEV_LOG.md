@@ -169,3 +169,21 @@
 - **说明**：规则为内置预设，自定义规则编辑器规划在后续版本
 - **验证**：`cargo check` + `npm run build` 通过
 - **commit**：待提交
+
+## 2026-09-07 · 阶段 2 完成：并发执行 / 进度 / 失败重试 / 导出导入
+
+- **改动文件**：`src-tauri/src/batch_inspect.rs`（并发+进度+重试）、`src-tauri/src/lib.rs`（导出/导入 filter 参数）、`src/App.tsx`（前端）、`src/i18n.ts`（文案）、`src/index.css`（样式）
+- **改动内容**：
+  - 后端：
+    - `batch_execute_inspect` 支持并发（1-10，默认 5，按设备数收敛），thread::scope 多线程执行
+    - 每台设备完成推送 `inspect-progress` 事件（current/total/deviceName）
+    - 设备连接失败自动重试一次
+    - `save_text_export` / `open_text_import` 新增可选 filter 参数（json/csv/txt），文件对话框过滤器随之变化
+  - 前端：
+    - 执行区新增并发数输入（1-10）+ 进度条（执行中显示 current/total）
+    - 结果导出：JSON 全量报告 / CSV 设备汇总（含 BOM，Excel 打开不乱码）
+    - CSV 导入设备：选择 CSV（name,host,port,username,password,vendor,remark），自动校验 vendor、解析引号转义，导入结果 toast 提示
+  - Inspector 新增 onNotify prop（接入全局 toast）
+- **说明**：自动化巡检五步（设备管理/批量执行/模板联动/故障判断/增强导出）至此全部完成
+- **验证**：`cargo check` + `npm run build` 通过，后端完整编译通过
+- **commit**：待提交
