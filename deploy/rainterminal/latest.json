@@ -5,7 +5,7 @@
   "publishedAt": "2026-09-06T00:00:00Z",
   "windows": {
     "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.0/RainTerminal_1.0.0_x64-setup.exe",
-    "sha256": "",
-    "size": 0
+    "sha256": "9e1e0c426c643b40743223ec5f1bc27cf1029bac60e631d6ac16273ca1714d1e",
+    "size": 5770958
   }
 }
