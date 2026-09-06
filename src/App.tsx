@@ -2250,6 +2250,17 @@ function App() {
     setToast(`分类「${name}」删除成功${commandCount > 0 ? `（含 ${commandCount} 条命令）` : ''}`)
   }
 
+  function reorderCategories(fromIndex: number, toIndex: number) {
+    setSnippetCategories((current) => {
+      const withoutUncategorized = current.filter((c) => c !== '未分类')
+      if (fromIndex < 0 || fromIndex >= withoutUncategorized.length || toIndex < 0 || toIndex >= withoutUncategorized.length) return current
+      const result = [...withoutUncategorized]
+      const [moved] = result.splice(fromIndex, 1)
+      result.splice(toIndex, 0, moved)
+      return [...result, '未分类']
+    })
+  }
+
   function moveSnippet(id: string, category: string) {
     setSnippets((current) =>
       current.map((s) => (s.id === id ? { ...s, category } : s)),
@@ -2553,6 +2564,7 @@ function App() {
                       onAddCategory={addCategory}
                       onDeleteCategory={deleteCategory}
                       onMoveSnippet={moveSnippet}
+                      onReorderCategories={reorderCategories}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -9093,6 +9105,7 @@ function Inspector({
   onAddCategory,
   onDeleteCategory,
   onMoveSnippet,
+  onReorderCategories,
   commandHistory,
   onClearHistory,
   notes,
@@ -9114,6 +9127,7 @@ function Inspector({
   onAddCategory: (name: string) => void
   onDeleteCategory: (name: string) => void
   onMoveSnippet: (id: string, category: string) => void
+  onReorderCategories: (fromIndex: number, toIndex: number) => void
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9129,6 +9143,8 @@ function Inspector({
   const [snippetCategory, setSnippetCategory] = useState(() => categories.find((c) => c !== '未分类') || '未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
+  const [draggingCategory, setDraggingCategory] = useState<string | null>(null)
+  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
@@ -9349,10 +9365,55 @@ function Inspector({
               )}
               {visibleGroups.map(([category, list]) => {
                 const isExpanded = keyword ? true : expandedCategories.has(category)
+                const isUncategorized = category === '未分类'
+                const isDragging = draggingCategory === category
+                const isDragOver = dragOverCategory === category && !isUncategorized
+                const sortableCategories = categories.filter((c) => c !== '未分类')
                 return (
-                  <div key={category} className={`snippet-group${isExpanded ? '' : ' collapsed'}`}>
-                    <div className="snippet-group-header-row">
+                  <div
+                    key={category}
+                    className={`snippet-group${isExpanded ? '' : ' collapsed'}${isDragging ? ' dragging' : ''}${isDragOver ? ' drag-over' : ''}`}
+                  >
+                    <div
+                      className="snippet-group-header-row"
+                      draggable={!isUncategorized}
+                      onDragStart={(event) => {
+                        if (isUncategorized) return
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', category)
+                        setDraggingCategory(category)
+                      }}
+                      onDragOver={(event) => {
+                        if (isUncategorized || !draggingCategory || draggingCategory === category) return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        if (dragOverCategory !== category) setDragOverCategory(category)
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverCategory === category) setDragOverCategory(null)
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        if (isUncategorized || !draggingCategory || draggingCategory === category) {
+                          setDraggingCategory(null)
+                          setDragOverCategory(null)
+                          return
+                        }
+                        const fromIndex = sortableCategories.indexOf(draggingCategory)
+                        const toIndex = sortableCategories.indexOf(category)
+                        if (fromIndex >= 0 && toIndex >= 0 && fromIndex !== toIndex) {
+                          onReorderCategories(fromIndex, toIndex)
+                        }
+                        setDraggingCategory(null)
+                        setDragOverCategory(null)
+                      }}
+                      onDragEnd={() => {
+                        setDraggingCategory(null)
+                        setDragOverCategory(null)
+                      }}
+                    >
                       <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
+                        {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true">⋮⋮</span>}
                         <span className="snippet-group-arrow">{isExpanded ? '▾' : '▸'}</span>
                         <strong>{category}</strong>
                         <span className="snippet-category-count">{list.length}</span>

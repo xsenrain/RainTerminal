@@ -4181,6 +4181,36 @@ body:has(.app-toast) .file-download-progress {
   margin-top: 8px;
 }
 
+.snippet-group.dragging {
+  opacity: 0.4;
+}
+
+.snippet-group.drag-over .snippet-group-header {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.snippet-group-drag-handle {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+  letter-spacing: -2px;
+}
+
+.snippet-group-header-row {
+  cursor: default;
+}
+
+.snippet-group-header-row[draggable="true"] {
+  cursor: grab;
+}
+
+.snippet-group-header-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .snippet-group-header {
   display: flex;
   align-items: center;
