@@ -10443,6 +10443,11 @@ function InspectWorkspace({
     setInspectResults(null)
     setInspectProgress({ current: 0, total: selectedDevices.length })
     try {
+      const safeConcurrency = Math.min(200, Math.max(1, Math.floor(inspectConcurrency) || 1))
+      if (safeConcurrency !== inspectConcurrency) {
+        onNotify(t('并发数最高为 200，已自动调整为 200'))
+        setInspectConcurrency(safeConcurrency)
+      }
       const results = await invoke<InspectExecResult[]>('batch_execute_inspect', {
         devices: selectedDevices.map((d) => ({
           name: d.name,
@@ -10453,7 +10458,7 @@ function InspectWorkspace({
           vendor: d.vendor,
         })),
         commands: commandList,
-        concurrency: inspectConcurrency,
+        concurrency: safeConcurrency,
       })
       if (discardInspectResultRef.current) return
       setInspectResults(results)
@@ -10918,7 +10923,21 @@ function InspectWorkspace({
                 min={1}
                 max={200}
                 value={inspectConcurrency}
-                onChange={(event) => setInspectConcurrency(Math.min(200, Math.max(1, Number(event.target.value) || 1)))}
+                title={t('最大并发数 200')}
+                onChange={(event) => {
+                  const raw = Number(event.target.value)
+                  if (!Number.isFinite(raw)) return
+                  setInspectConcurrency(Math.floor(raw))
+                }}
+                onBlur={() => {
+                  const value = inspectConcurrency
+                  if (value > 200) {
+                    onNotify(t('并发数最高为 200，已自动调整为 200'))
+                    setInspectConcurrency(200)
+                  } else if (value < 1) {
+                    setInspectConcurrency(1)
+                  }
+                }}
               />
             </label>
             <button
