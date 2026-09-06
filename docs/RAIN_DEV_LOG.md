@@ -37,3 +37,21 @@
 - **验证**：`npm run build` 通过（无 TS 错误；CSS +1.3KB，JS +2.6KB）
 - **使用方式**：打开「常用命令」面板，点击分类标题折叠/展开；搜索框输入厂商名或命令关键字过滤
 - **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）
+
+---
+
+## 2026-09-06 · 阶段 1 修复：数据迁移 BUG + 动态分类 + 右键移动
+
+- **BUG 修复**：
+  - 旧版 localStorage 数据（无 category）覆盖了带分类的默认模板，导致所有命令显示「未分类」→ 新增 `SNIPPETS_VERSION=2` 版本号，启动时版本不匹配则用 defaultSnippets 的 category 迁移已有默认命令（保留用户自定义）
+  - `addSnippet` 保存新命令时丢失 category 字段 → 已修复，保存时带上 `snippet.category || '未分类'`
+- **动态分类管理**：
+  - 新增 `usePersistentSnippetCategories` hook，分类列表持久化到 localStorage（`xundu.snippetCategories`）
+  - 面板顶部新增「分类」按钮，展开分类管理区：输入名称新建分类、列出所有分类可删除（「未分类」不可删，删除分类后该分类下命令自动归为「未分类」）
+  - 新建命令表单的分类下拉改为动态读取现有分类
+- **右键菜单移动命令**：
+  - 每条命令支持右键 → 弹出「移动到分类」菜单 → 选择目标分类即移动
+  - 菜单点击外部/滚动自动关闭
+- **改动文件**：`src/App.tsx`、`src/i18n.ts`、`src/index.css`
+- **验证**：`npm run build` 通过（修复 1 处 TS 类型错误）
+- **回滚**：`git revert <本次 commit hash>`（可用 `git log --oneline` 查看）

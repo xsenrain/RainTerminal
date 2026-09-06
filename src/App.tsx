@@ -109,6 +109,7 @@ import {
   PackageOpen,
   Minus,
   MoreVertical,
+  FolderPlus,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -578,6 +579,7 @@ const defaultSnippets: Snippet[] = [
 ]
 
 const SNIPPET_CATEGORIES = ['Linux 服务器', '华为', '华三', '锐捷', '中兴', '通用', '未分类'] as const
+const SNIPPETS_VERSION = 2
 
 const TERMINAL_WRITE_CHUNK_SIZE = 12 * 1024
 const TERMINAL_WRITE_QUEUE_LIMIT = 1024 * 1024
@@ -952,6 +954,7 @@ function App() {
   const [servers, setServers, serverCredentialState] = usePersistentServers()
   const [remoteDesktopProfiles, setRemoteDesktopProfiles, remoteDesktopCredentialState] = usePersistentRemoteDesktopProfiles()
   const [snippets, setSnippets] = usePersistentSnippets()
+  const [snippetCategories, setSnippetCategories] = usePersistentSnippetCategories()
   const [sessionNotes, setSessionNotes] = usePersistentSessionNotes()
   const [remoteAuxConcurrency, setRemoteAuxConcurrency] = usePersistentRemoteAuxConcurrency()
   const [appearance, setAppearance] = usePersistentAppAppearance()
@@ -2222,7 +2225,7 @@ function App() {
 
     setSnippets((current) => {
       const withoutDuplicate = current.filter((item) => item.command !== command)
-      return [{ id: crypto.randomUUID(), name, command }, ...withoutDuplicate]
+      return [{ id: crypto.randomUUID(), name, command, category: snippet.category || '未分类' }, ...withoutDuplicate]
     })
     setToast('命令片段已保存')
   }
@@ -2230,6 +2233,35 @@ function App() {
   function deleteSnippet(id: string) {
     setSnippets((current) => current.filter((snippet) => snippet.id !== id))
     setToast('命令片段已删除')
+  }
+
+  function addCategory(name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setSnippetCategories((current) => {
+      if (current.includes(trimmed)) return current
+      const withoutUncategorized = current.filter((c) => c !== '未分类')
+      return [...withoutUncategorized, trimmed, '未分类']
+    })
+    setToast(`分类「${trimmed}」已添加`)
+  }
+
+  function deleteCategory(name: string) {
+    if (name === '未分类') {
+      setToast('「未分类」是默认分类，不可删除')
+      return
+    }
+    setSnippetCategories((current) => current.filter((c) => c !== name))
+    setSnippets((current) =>
+      current.map((s) => (s.category === name ? { ...s, category: '未分类' } : s)),
+    )
+    setToast(`分类「${name}」已删除，该分类下的命令已移至「未分类」`)
+  }
+
+  function moveSnippet(id: string, category: string) {
+    setSnippets((current) =>
+      current.map((s) => (s.id === id ? { ...s, category } : s)),
+    )
   }
 
   async function importOpenSshConfig() {
@@ -2523,8 +2555,12 @@ function App() {
                       commandDraft={commandDraft}
                       onCommandDraftChange={setCommandDraft}
                       snippets={snippets}
+                      categories={snippetCategories}
                       onAddSnippet={addSnippet}
                       onDeleteSnippet={deleteSnippet}
+                      onAddCategory={addCategory}
+                      onDeleteCategory={deleteCategory}
+                      onMoveSnippet={moveSnippet}
                       commandHistory={commandHistory}
                       onClearHistory={clearCommandHistory}
                       notes={sessionNotes}
@@ -9059,8 +9095,12 @@ function Inspector({
   commandDraft,
   onCommandDraftChange,
   snippets,
+  categories,
   onAddSnippet,
   onDeleteSnippet,
+  onAddCategory,
+  onDeleteCategory,
+  onMoveSnippet,
   commandHistory,
   onClearHistory,
   notes,
@@ -9076,8 +9116,12 @@ function Inspector({
   commandDraft: string
   onCommandDraftChange: (value: string) => void
   snippets: Snippet[]
+  categories: string[]
   onAddSnippet: (snippet: Omit<Snippet, 'id'>) => void
   onDeleteSnippet: (id: string) => void
+  onAddCategory: (name: string) => void
+  onDeleteCategory: (name: string) => void
+  onMoveSnippet: (id: string, category: string) => void
   commandHistory: CommandHistoryItem[]
   onClearHistory: () => void
   notes: SessionNote[]
@@ -9094,6 +9138,9 @@ function Inspector({
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; snippetId: string } | null>(null)
   const [noteText, setNoteText] = useState('')
   const commandSet = getQuickCommands(remoteTarget ? 'connected' : 'ready')
 
@@ -9121,6 +9168,30 @@ function Inspector({
     onCommandDraftChange(command)
     onActiveTabChange('run')
   }
+
+  function saveCategory() {
+    if (!newCategoryName.trim()) return
+    onAddCategory(newCategoryName.trim())
+    setSnippetCategory(newCategoryName.trim())
+    setNewCategoryName('')
+    setCategoryEditorOpen(false)
+  }
+
+  function openContextMenu(event: React.MouseEvent, snippetId: string) {
+    event.preventDefault()
+    setContextMenu({ x: event.clientX, y: event.clientY, snippetId })
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [contextMenu])
 
   return (
     <aside className="inspector utility-panel">
@@ -9180,7 +9251,7 @@ function Inspector({
               )
             : snippets
           const groups = new Map<string, Snippet[]>()
-          for (const cat of SNIPPET_CATEGORIES) groups.set(cat, [])
+          for (const cat of categories) groups.set(cat, [])
           for (const s of filtered) {
             const c = s.category || '未分类'
             if (!groups.has(c)) groups.set(c, [])
@@ -9201,10 +9272,16 @@ function Inspector({
                   <strong>{t('保存经常使用的命令')}</strong>
                   <span>{t('点击使用后会先回到运行页，不会直接执行。')}</span>
                 </div>
-                <button className="utility-text-button" type="button" onClick={() => setSnippetEditorOpen((current) => !current)}>
-                  {snippetEditorOpen ? <X size={13} /> : <Plus size={13} />}
-                  {t(snippetEditorOpen ? '取消' : '新建')}
-                </button>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <button className="utility-text-button" type="button" onClick={() => setCategoryEditorOpen((current) => !current)}>
+                    <FolderPlus size={13} />
+                    {t('分类')}
+                  </button>
+                  <button className="utility-text-button" type="button" onClick={() => setSnippetEditorOpen((current) => !current)}>
+                    {snippetEditorOpen ? <X size={13} /> : <Plus size={13} />}
+                    {t(snippetEditorOpen ? '取消' : '新建')}
+                  </button>
+                </div>
               </div>
               <input
                 className="snippet-search"
@@ -9213,6 +9290,36 @@ function Inspector({
                 onChange={(event) => setSnippetSearch(event.target.value)}
                 placeholder={t('搜索命令')}
               />
+              {categoryEditorOpen && (
+                <div className="snippet-category-manager utility-editor">
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    <input
+                      className="snippet-search"
+                      style={{ marginBottom: 0 }}
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(event) => setNewCategoryName(event.target.value)}
+                      placeholder={t('输入新分类名称')}
+                      onKeyDown={(event) => { if (event.key === 'Enter') saveCategory() }}
+                    />
+                    <button className="utility-primary-button" type="button" onClick={saveCategory} disabled={!newCategoryName.trim()} style={{ flexShrink: 0 }}>
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <div className="snippet-category-list">
+                    {categories.map((cat) => (
+                      <div key={cat} className="snippet-category-row">
+                        <span>{cat}</span>
+                        {cat !== '未分类' && (
+                          <button type="button" className="utility-text-button danger" onClick={() => onDeleteCategory(cat)} title={t('删除分类')}>
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {snippetEditorOpen && (
                 <div className="snippet-editor utility-editor">
                   <EditableField label={t('名称')} value={snippetName} onChange={setSnippetName} />
@@ -9227,7 +9334,7 @@ function Inspector({
                   <label className="utility-command-field">
                     <span>{t('分类')}</span>
                     <select value={snippetCategory} onChange={(event) => setSnippetCategory(event.target.value)}>
-                      {SNIPPET_CATEGORIES.map((cat) => (
+                      {categories.map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>
@@ -9251,15 +9358,17 @@ function Inspector({
                 const collapsed = collapsedCategories.has(category)
                 return (
                   <div key={category} className={`snippet-group${collapsed ? ' collapsed' : ''}`}>
-                    <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
-                      <span className="snippet-group-arrow">{collapsed ? '▸' : '▾'}</span>
-                      <strong>{category}</strong>
-                      <span className="snippet-category-count">{list.length}</span>
-                    </button>
+                    <div className="snippet-group-header-row">
+                      <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
+                        <span className="snippet-group-arrow">{collapsed ? '▸' : '▾'}</span>
+                        <strong>{category}</strong>
+                        <span className="snippet-category-count">{list.length}</span>
+                      </button>
+                    </div>
                     {!collapsed && (
                       <div className="snippet-list">
                         {list.map((snippet) => (
-                          <div className="snippet-item" key={snippet.id}>
+                          <div className="snippet-item" key={snippet.id} onContextMenu={(event) => openContextMenu(event, snippet.id)}>
                             <button type="button" onClick={() => prepareCommand(snippet.command)} title={t('使用此命令')}>
                               <strong>{snippet.name}</strong>
                               <span>{snippet.command}</span>
@@ -9274,6 +9383,28 @@ function Inspector({
                   </div>
                 )
               })}
+              {contextMenu && (
+                <div
+                  className="snippet-context-menu"
+                  style={{ left: contextMenu.x, top: contextMenu.y }}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="snippet-context-menu-title">{t('移动到分类')}</div>
+                  {categories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className="snippet-context-menu-item"
+                      onClick={() => {
+                        onMoveSnippet(contextMenu.snippetId, cat)
+                        setContextMenu(null)
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -12921,12 +13052,21 @@ function usePersistentSnippets() {
   const [snippets, setSnippets] = useState<Snippet[]>(() => {
     try {
       const raw = localStorage.getItem('xundu.snippets')
+      const storedVersion = Number(localStorage.getItem('xundu.snippets.version'))
       if (!raw) return defaultSnippets
       const parsed = JSON.parse(raw) as unknown
       if (!Array.isArray(parsed)) return defaultSnippets
-      const normalized = parsed
+      let normalized = parsed
         .map((snippet) => normalizeSnippet(snippet))
         .filter((snippet): snippet is Snippet => Boolean(snippet))
+      // 版本不匹配时，用 defaultSnippets 的 category 迁移已有默认命令（保留用户自定义）
+      if (storedVersion !== SNIPPETS_VERSION) {
+        const defaultMap = new Map(defaultSnippets.map((s) => [s.id, s]))
+        normalized = normalized.map((s) => {
+          const def = defaultMap.get(s.id)
+          return def ? { ...s, category: def.category || s.category } : s
+        })
+      }
       return normalized.length > 0 ? normalized : defaultSnippets
     } catch {
       return defaultSnippets
@@ -12935,9 +13075,33 @@ function usePersistentSnippets() {
 
   useEffect(() => {
     localStorage.setItem('xundu.snippets', JSON.stringify(snippets))
+    localStorage.setItem('xundu.snippets.version', String(SNIPPETS_VERSION))
   }, [snippets])
 
   return [snippets, setSnippets] as const
+}
+
+function usePersistentSnippetCategories() {
+  const [categories, setCategories] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('xundu.snippetCategories')
+      if (!raw) return [...SNIPPET_CATEGORIES]
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) return [...SNIPPET_CATEGORIES]
+      const list = parsed.filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+      // 确保"未分类"始终存在且在末尾
+      const withoutUncategorized = list.filter((c) => c !== '未分类')
+      return [...new Set([...withoutUncategorized, '未分类'])]
+    } catch {
+      return [...SNIPPET_CATEGORIES]
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('xundu.snippetCategories', JSON.stringify(categories))
+  }, [categories])
+
+  return [categories, setCategories] as const
 }
 
 function usePersistentSessionNotes() {
