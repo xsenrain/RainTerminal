@@ -9143,9 +9143,7 @@ function Inspector({
   const [snippetCategory, setSnippetCategory] = useState(() => categories.find((c) => c !== '未分类') || '未分类')
   const [snippetEditorOpen, setSnippetEditorOpen] = useState(false)
   const [snippetSearch, setSnippetSearch] = useState('')
-  const [draggingCategory, setDraggingCategory] = useState<string | null>(null)
-  const [dragOverCategory, setDragOverCategory] = useState<string | null>(null)
-  const draggingCategoryRef = useRef<string | null>(null)
+  const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; category: string } | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [newCategoryName, setNewCategoryName] = useState('')
   const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
@@ -9367,54 +9365,18 @@ function Inspector({
               {visibleGroups.map(([category, list]) => {
                 const isExpanded = keyword ? true : expandedCategories.has(category)
                 const isUncategorized = category === '未分类'
-                const isDragging = draggingCategory === category
-                const isDragOver = dragOverCategory === category && !isUncategorized
-                const sortableCategories = categories.filter((c) => c !== '未分类')
                 return (
-                  <div
-                    key={category}
-                    className={`snippet-group${isExpanded ? '' : ' collapsed'}${isDragging ? ' dragging' : ''}${isDragOver ? ' drag-over' : ''}`}
-                  >
+                  <div key={category} className={`snippet-group${isExpanded ? '' : ' collapsed'}`}>
                     <div
                       className="snippet-group-header-row"
-                      draggable={!isUncategorized}
-                      onDragStart={(event) => {
+                      onContextMenu={(event) => {
                         if (isUncategorized) return
-                        event.dataTransfer.effectAllowed = 'move'
-                        event.dataTransfer.setData('text/plain', category)
-                        draggingCategoryRef.current = category
-                        setDraggingCategory(category)
-                      }}
-                      onDragOver={(event) => {
                         event.preventDefault()
-                        if (isUncategorized || !draggingCategoryRef.current || draggingCategoryRef.current === category) return
-                        event.dataTransfer.dropEffect = 'move'
-                        if (dragOverCategory !== category) setDragOverCategory(category)
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverCategory === category) setDragOverCategory(null)
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault()
-                        const from = draggingCategoryRef.current
-                        draggingCategoryRef.current = null
-                        setDraggingCategory(null)
-                        setDragOverCategory(null)
-                        if (isUncategorized || !from || from === category) return
-                        const fromIndex = sortableCategories.indexOf(from)
-                        const toIndex = sortableCategories.indexOf(category)
-                        if (fromIndex >= 0 && toIndex >= 0 && fromIndex !== toIndex) {
-                          onReorderCategories(fromIndex, toIndex)
-                        }
-                      }}
-                      onDragEnd={() => {
-                        draggingCategoryRef.current = null
-                        setDraggingCategory(null)
-                        setDragOverCategory(null)
+                        setGroupContextMenu({ x: event.clientX, y: event.clientY, category })
                       }}
                     >
-                      {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true">⋮⋮</span>}
-                      <button type="button" className="snippet-group-header" draggable={false} onClick={() => toggleCategory(category)}>
+                      {!isUncategorized && <span className="snippet-group-drag-handle" aria-hidden="true" title="右键排序">⋮⋮</span>}
+                      <button type="button" className="snippet-group-header" onClick={() => toggleCategory(category)}>
                         <span className="snippet-group-arrow">{isExpanded ? '▾' : '▸'}</span>
                         <strong>{category}</strong>
                         <span className="snippet-category-count">{list.length}</span>
@@ -9465,6 +9427,27 @@ function Inspector({
                   ))}
                 </div>
               )}
+              {groupContextMenu && (() => {
+                const sortable = categories.filter((c) => c !== '未分类')
+                const idx = sortable.indexOf(groupContextMenu.category)
+                const move = (to: number) => {
+                  if (to >= 0 && to < sortable.length && to !== idx) onReorderCategories(idx, to)
+                  setGroupContextMenu(null)
+                }
+                return (
+                  <div
+                    className="snippet-context-menu"
+                    style={{ left: groupContextMenu.x, top: groupContextMenu.y }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="snippet-context-menu-title">{groupContextMenu.category} · 排序</div>
+                    <button type="button" className="snippet-context-menu-item" disabled={idx <= 0} onClick={() => move(idx - 1)}>↑ 上移</button>
+                    <button type="button" className="snippet-context-menu-item" disabled={idx >= sortable.length - 1} onClick={() => move(idx + 1)}>↓ 下移</button>
+                    <button type="button" className="snippet-context-menu-item" disabled={idx <= 0} onClick={() => move(0)}>⤒ 移至顶部</button>
+                    <button type="button" className="snippet-context-menu-item" disabled={idx >= sortable.length - 1} onClick={() => move(sortable.length - 1)}>⤓ 移至尾部</button>
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}
