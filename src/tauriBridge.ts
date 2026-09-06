@@ -201,6 +201,8 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
         }
       }) as T
     }
+    case 'inspect_reset_all':
+      return 0 as T
     case 'check_app_update': {
       const available = Boolean((window as typeof window & { __XUNDU_SANDBOX_UPDATE_AVAILABLE__?: boolean }).__XUNDU_SANDBOX_UPDATE_AVAILABLE__)
       return available

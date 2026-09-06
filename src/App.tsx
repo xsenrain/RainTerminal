@@ -10485,6 +10485,27 @@ function InspectWorkspace({
     })
   }
 
+  async function resetInspectWorkspace() {
+    const message = inspectRunning
+      ? t('重置将断开所有 SSH 连接（终端会话、隧道、传输、辅助会话）并清空巡检状态；当前巡检仍在执行中，正在执行的命令可能被中断。确定继续吗？')
+      : t('重置将断开所有 SSH 连接（终端会话、隧道、传输、辅助会话）并清空巡检状态。确定继续吗？')
+    if (!window.confirm(message)) return
+
+    let closedCount = 0
+    try {
+      closedCount = await invoke<number>('inspect_reset_all')
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    }
+    setSelectedInspectIds(new Set())
+    setInspectCommands([])
+    setInspectResults(null)
+    setInspectProgress(null)
+    setInspectConcurrency(5)
+    setInspectRunning(false)
+    onNotify(t('重置完成，已断开 {count} 个连接').replace('{count}', String(closedCount)))
+  }
+
   function toggleSelectAll() {
     setSelectedInspectIds(
       selectedInspectIds.size === inspectDevices.length
@@ -10666,6 +10687,10 @@ function InspectWorkspace({
           <button className="utility-primary-button compact" type="button" onClick={() => openInspectEditor()}>
             <Plus size={13} />
             {t('添加设备')}
+          </button>
+          <button className="utility-text-button danger compact" type="button" onClick={() => void resetInspectWorkspace()}>
+            <RotateCcw size={13} />
+            {t('重置')}
           </button>
         </div>
       </header>

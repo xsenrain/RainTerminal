@@ -203,3 +203,21 @@
 - **说明**：旧抽屉内巡检分支保留但不再可达（安全网）；工作台运行状态在切换视图时保留
 - **验证**：`npm run build` 通过
 - **commit**：待提交
+
+## 2026-09-07 · 巡检工作台：阈值判断修复 + 状态跨视图保留 + 重置按钮
+
+- **背景**：①用户反馈执行 df -h 被误报“磁盘使用率 ≥ 90%”（实际 41%/58%）；②切换页面再回来巡检结果/勾选/命令丢失；③要求添加设备旁增加“重置”按钮（断开所有连接、优化连接池）
+- **改动文件**：src-tauri/src/batch_inspect.rs、src-tauri/src/lib.rs、src/App.tsx、src/tauriBridge.ts
+- **改动内容**：
+  - 后端（batch_inspect.rs）：
+    - InspectRule.threshold 由 u64 改为 f64，新增 percent 标记
+    - 百分比模式规则（df/CPU/内存）只提取 “NN%” 格式最大值（max_percent），不再把容量（1000M/989M）误当使用率
+    - 数值模式规则（负载/温度）提取最大数值且支持小数（max_number），load average: 0.52 不再误报
+  - 后端（lib.rs）：
+    - 新增 inspect_reset_all 命令：断开全部交互 SSH 会话（发 Disconnect + 置死）、清空远程辅助会话池、终止 SSH 隧道进程、取消全部文件传输任务、终止本地 Shell，返回断开数量；已注册进 generate_handler
+  - 前端（App.tsx）：
+    - 巡检状态（勾选/命令列表/结果/并发数/进度/运行中）从 InspectWorkspace 提升到 App 层，切视图后保留
+    - 头部新增“重置”按钮（添加设备右侧，danger 样式）：confirm 确认 → 调 inspect_reset_all → 清空巡检状态 → toast 提示断开数量
+  - tauriBridge.ts：sandbox mock 增加 inspect_reset_all
+- **验证**：cargo check 通过（无警告）、npm run build 通过；debug exe 被运行中 dev 实例占用未能链接（正常）
+- **commit**：待提交

@@ -6699,6 +6699,80 @@ fn ssh_tunnel_list(state: State<SshTunnelProcesses>) -> Result<Vec<SshTunnelStat
     Ok(statuses)
 }
 
+/// 巡检工作台重置：断开全部 SSH 连接并清空连接池。
+/// 覆盖：交互终端会话、远程辅助会话、SSH 隧道进程、文件传输任务、本地 Shell。
+/// 返回被断开/清理的连接数量。
+#[tauri::command]
+fn inspect_reset_all(
+    state: State<SshSessions>,
+    aux_state: State<RemoteAuxSessions>,
+    tunnel_state: State<SshTunnelProcesses>,
+    transfer_state: State<FileDownloadTransfers>,
+    shell_state: State<LocalShellSessions>,
+) -> Result<u32, String> {
+    let mut closed: u32 = 0;
+
+    // 1. 交互 SSH 会话：发送 Disconnect 并置死，清空连接池
+    let handles: Vec<SshSessionHandle> = {
+        let mut sessions = state
+            .sessions
+            .lock()
+            .map_err(|_| "SSH session store is poisoned".to_string())?;
+        sessions.drain().map(|(_, handle)| handle).collect()
+    };
+    closed += handles.len() as u32;
+    for handle in handles {
+        handle.alive.store(false, Ordering::SeqCst);
+        let _ = handle.sender.send(SshWorkerCommand::Disconnect);
+    }
+
+    // 2. 远程辅助会话：置死并清空
+    let aux_handles: Vec<RemoteAuxSessionHandle> = {
+        let mut sessions = aux_state
+            .sessions
+            .lock()
+            .map_err(|_| "Remote helper session store is poisoned".to_string())?;
+        sessions.drain().map(|(_, handle)| handle).collect()
+    };
+    closed += aux_handles.len() as u32;
+    for handle in aux_handles {
+        handle.alive.store(false, Ordering::SeqCst);
+    }
+
+    // 3. SSH 隧道进程：终止并清空
+    if let Ok(mut processes) = tunnel_state.processes.lock() {
+        closed += processes.len() as u32;
+        for (_, process) in processes.iter_mut() {
+            let _ = process.child.kill();
+            let _ = process.child.wait();
+        }
+        processes.clear();
+    }
+
+    // 4. 文件传输任务：置取消标记并清空
+    if let Ok(mut transfers) = transfer_state.transfers.lock() {
+        closed += transfers.len() as u32;
+        for (_, cancel) in transfers.drain() {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    }
+
+    // 5. 本地 Shell 进程：终止并清空
+    if let Ok(mut processes) = shell_state.processes.lock() {
+        closed += processes.len() as u32;
+        for (_, process) in processes.iter_mut() {
+            if let Ok(mut child) = process.child.lock() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+        processes.clear();
+    }
+
+    diag_log("inspect-reset", format!("disconnected {closed} connection(s)"));
+    Ok(closed)
+}
+
 #[tauri::command]
 fn set_remote_aux_limit(limiter: State<RemoteAuxLimiter>, limit: usize) -> Result<usize, String> {
     limiter.set_limit(limit)
@@ -7370,7 +7444,8 @@ pub fn run() {
             ssh_tunnel_start,
             ssh_tunnel_stop,
             ssh_tunnel_list,
-            batch_execute_inspect
+            batch_execute_inspect,
+            inspect_reset_all
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
