@@ -252,7 +252,23 @@ type InspectDevice = {
   remark: string
 }
 
-const INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other'] as const
+const DEFAULT_INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other']
+
+/// 读取持久化的厂商列表；无数据或损坏时回退内置默认列表。
+function readInspectVendors(): string[] {
+  try {
+    const raw = localStorage.getItem('rain.inspectVendors')
+    if (raw) {
+      const list: unknown = JSON.parse(raw)
+      if (Array.isArray(list) && list.length > 0 && list.every((item) => typeof item === 'string')) {
+        return list as string[]
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...DEFAULT_INSPECT_VENDORS]
+}
 function buildInspectHtmlReport(record: InspectHistoryRecord): string {
   const healthClass = (health: string) => (health === 'critical' ? 'h-crit' : health === 'warn' ? 'h-warn' : 'h-ok')
   const healthLabel = (health: string) => (health === 'critical' ? '严重' : health === 'warn' ? '警告' : '正常')
@@ -9653,7 +9669,7 @@ function Inspector({
           port: portIndex >= 0 ? Number(row[portIndex]) || 22 : 22,
           username: (usernameIndex >= 0 ? row[usernameIndex] ?? '' : '').trim(),
           password: (passwordIndex >= 0 ? row[passwordIndex] ?? '' : '').trim(),
-          vendor: (INSPECT_VENDORS as readonly string[]).includes(vendor) ? vendor : 'linux',
+          vendor: vendor || 'linux',
           remark: (remarkIndex >= 0 ? row[remarkIndex] ?? '' : '').trim(),
         })
         added += 1
@@ -10104,14 +10120,10 @@ function Inspector({
                     />
                   </label>
                   <label className="utility-command-field">
-                    <span>{t('厂商类型')}</span>
-                    <select
-                      value={inspectDraft.vendor}
-                      onChange={(event) => setInspectDraft((d) => ({ ...d, vendor: event.target.value }))}
-                    >
-                      {INSPECT_VENDORS.map((v) => (
+                    <select value={inspectDraft.vendor} onChange={(event) => setInspectDraft((d) => ({ ...d, vendor: event.target.value }))}>
+                      {readInspectVendors().map((v) => (
                         <option key={v} value={v}>
-                          {t(`厂商.${v}`)}
+                          {v}
                         </option>
                       ))}
                     </select>
@@ -10174,7 +10186,7 @@ function Inspector({
                   <div className="inspect-device-main">
                     <div className="inspect-device-title">
                       <strong>{device.name}</strong>
-                      <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{t(`厂商.${device.vendor}`)}</em>
+                      <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{device.vendor}</em>
                     </div>
                     <div className="inspect-device-meta">
                       <span>{device.host}:{device.port}</span>
@@ -10494,6 +10506,9 @@ function InspectWorkspace({
   const [inspectLogDir, setInspectLogDir] = useState('')
   const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
   const [inspectView, setInspectView] = useState<InspectWorkspaceView>('workbench')
+  const [inspectVendors, setInspectVendors] = useState<string[]>(() => readInspectVendors())
+  const [inspectVendorsOpen, setInspectVendorsOpen] = useState(false)
+  const [inspectVendorInput, setInspectVendorInput] = useState('')
   const [inspectHistory, setInspectHistory] = useState<InspectHistoryMeta[] | null>(null)
   const [inspectHistoryDetail, setInspectHistoryDetail] = useState<InspectHistoryRecord | null>(null)
   const [inspectRules, setInspectRules] = useState<InspectRuleConfig[] | null>(null)
@@ -10816,7 +10831,7 @@ function InspectWorkspace({
           port: portIndex >= 0 ? Number(row[portIndex]) || 22 : 22,
           username: (usernameIndex >= 0 ? row[usernameIndex] ?? '' : '').trim(),
           password: (passwordIndex >= 0 ? row[passwordIndex] ?? '' : '').trim(),
-          vendor: (INSPECT_VENDORS as readonly string[]).includes(vendor) ? vendor : 'linux',
+          vendor: vendor || 'linux',
           remark: (remarkIndex >= 0 ? row[remarkIndex] ?? '' : '').trim(),
         })
         added += 1
@@ -10869,6 +10884,38 @@ function InspectWorkspace({
       onNotify(`模板下载失败：${String(reason).replace(/^Error:\s*/i, '')}`)
     }
   }
+  function persistInspectVendors(next: string[]) {
+    setInspectVendors(next)
+    try {
+      localStorage.setItem('rain.inspectVendors', JSON.stringify(next))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function addInspectVendor() {
+    const name = inspectVendorInput.trim()
+    if (!name) {
+      onNotify(t('请输入厂商名称'))
+      return
+    }
+    if (inspectVendors.includes(name)) {
+      onNotify(t('厂商已存在'))
+      return
+    }
+    persistInspectVendors([...inspectVendors, name])
+    setInspectVendorInput('')
+    onNotify(t('厂商已添加'))
+  }
+
+  function removeInspectVendor(vendor: string) {
+    if (!window.confirm(t('确定删除厂商') + `「${vendor}」吗？` + t('已添加设备的厂商标记保留，但不再出现在下拉选项中'))) {
+      return
+    }
+    persistInspectVendors(inspectVendors.filter((v) => v !== vendor))
+    onNotify(t('厂商已删除'))
+  }
+
   async function loadInspectHistory() {
     try {
       const list = await invoke<InspectHistoryMeta[]>('list_inspect_history')
@@ -10923,7 +10970,7 @@ function InspectWorkspace({
         ? { ...rule }
         : {
             id: `rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-            vendor: 'linux',
+            vendor: inspectVendors[0] ?? 'linux',
             commandContains: '',
             severity: 'warn',
             type: 'keyword',
@@ -11100,12 +11147,52 @@ function InspectWorkspace({
         <div className="inspect-device-pane">
           <div className="inspect-pane-head">
             <strong>{t('设备列表')} ({inspectDevices.length})</strong>
+            <button className="utility-text-button" type="button" onClick={() => setInspectVendorsOpen((open) => !open)}>
+              <Settings2 size={13} />
+              {t('管理厂商')}
+            </button>
             {inspectDevices.length > 0 && (
               <button className="utility-text-button" type="button" onClick={toggleSelectAll}>
                 {allSelected ? t('取消全选') : t('全选')}
               </button>
             )}
           </div>
+
+          {inspectVendorsOpen && (
+            <div className="inspect-vendor-manager">
+              <div className="inspect-vendor-manager-row">
+                <input
+                  value={inspectVendorInput}
+                  onChange={(event) => setInspectVendorInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') addInspectVendor()
+                  }}
+                  placeholder={t('输入新厂商，如 深信服，回车或点添加')}
+                />
+                <button className="utility-primary-button compact" type="button" onClick={addInspectVendor}>
+                  <Plus size={13} />
+                  {t('添加')}
+                </button>
+                <button className="utility-text-button compact" type="button" onClick={() => setInspectVendorsOpen(false)}>
+                  <X size={13} />
+                  {t('收起')}
+                </button>
+              </div>
+              <div className="inspect-vendor-manager-list">
+                {inspectVendors.map((vendor) => (
+                  <span key={vendor} className="inspect-vendor-chip">
+                    {vendor}
+                    <button type="button" title={t('删除厂商')} onClick={() => removeInspectVendor(vendor)}>
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="inspect-vendor-manager-hint">
+                {t('厂商列表永久保存；删除后已添加设备的厂商标记保留，仅不再出现在下拉选项中')}
+              </div>
+            </div>
+          )}
 
           {inspectEditorOpen && (
             <div className="inspect-device-form-card">
@@ -11130,10 +11217,9 @@ function InspectWorkspace({
                   <input type="number" min={1} max={65535} value={inspectDraft.port} onChange={(e) => setInspectDraft({ ...inspectDraft, port: Number(e.target.value) || 22 })} />
                 </label>
                 <label>
-                  <span>{t('厂商')}</span>
                   <select value={inspectDraft.vendor} onChange={(e) => setInspectDraft({ ...inspectDraft, vendor: e.target.value })}>
-                    {INSPECT_VENDORS.map((vendor) => (
-                      <option key={vendor} value={vendor}>{t(`厂商.${vendor}`)}</option>
+                    {inspectVendors.map((vendor) => (
+                      <option key={vendor} value={vendor}>{vendor}</option>
                     ))}
                   </select>
                 </label>
@@ -11179,7 +11265,7 @@ function InspectWorkspace({
                 <div className="inspect-device-main">
                   <div className="inspect-device-title">
                     <strong>{device.name}</strong>
-                    <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{t(`厂商.${device.vendor}`)}</em>
+                    <em className={`inspect-vendor-tag vendor-${device.vendor}`}>{device.vendor}</em>
                   </div>
                   <div className="inspect-device-meta">
                     <span>{device.host}:{device.port}</span>
@@ -11611,12 +11697,9 @@ function InspectWorkspace({
                 <label>
                   <span>{t('适用厂商')}</span>
                   <select value={inspectRuleDraft.vendor} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, vendor: event.target.value })}>
-                    <option value="linux">Linux</option>
-                    <option value="huawei">华为</option>
-                    <option value="h3c">华三</option>
-                    <option value="ruijie">锐捷</option>
-                    <option value="zte">中兴</option>
-                    <option value="other">通用</option>
+                    {inspectVendors.map((vendor) => (
+                      <option key={vendor} value={vendor}>{vendor}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
