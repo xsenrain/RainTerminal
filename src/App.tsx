@@ -10614,7 +10614,10 @@ function InspectWorkspace({
   }
 
   async function exportInspectResultsCsv() {
-    if (!inspectResults) return
+    if (!inspectResults) {
+      onNotify(t('暂无巡检结果，请先执行巡检后再导出'))
+      return
+    }
     const date = new Date().toISOString().slice(0, 10)
     try {
       const header = ['设备名称', '主机', '健康状态', '执行结果', '耗时(秒)', '命令', '判断依据', '日志文件'].map(escapeCsvCell).join(',')
@@ -10626,11 +10629,14 @@ function InspectWorkspace({
           .map(escapeCsvCell)
           .join(',')
       })
-      await invoke('save_text_export', {
+      const savedPath = await invoke<string | null>('save_text_export', {
         suggestedName: `巡检汇总-${date}.csv`,
         content: `\uFEFF${[header, ...rows].join('\r\n')}`,
         filter: 'csv',
       })
+      if (savedPath) {
+        onNotify(`${t('已导出')}：${savedPath}`)
+      }
     } catch (reason) {
       onNotify(`导出失败：${String(reason).replace(/^Error:\s*/i, '')}`)
     }
