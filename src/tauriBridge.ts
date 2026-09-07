@@ -201,6 +201,16 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
         }
       }) as T
     }
+    case 'get_inspect_log_dir':
+      return 'C:/Users/sandbox/logs/inspect' as T
+    case 'set_inspect_log_dir': {
+      const path = typeof args.path === 'string' ? args.path : 'C:/Users/sandbox/logs/inspect'
+      return path as T
+    }
+    case 'open_inspect_log_dir':
+      return undefined as T
+    case 'pick_inspect_log_dir':
+      return null as T
     case 'check_app_update': {
       const available = Boolean((window as typeof window & { __XUNDU_SANDBOX_UPDATE_AVAILABLE__?: boolean }).__XUNDU_SANDBOX_UPDATE_AVAILABLE__)
       return available

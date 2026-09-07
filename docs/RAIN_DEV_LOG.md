@@ -267,3 +267,18 @@
 - **改动**：App.tsx（DockRail 菜单项、抽屉面板标题、巡检工作台页头）与 i18n.ts（新增'自动化'映射）同步改名
 - **验证**：npm run build 通过
 - **commit**：待提交
+
+## 2026-09-07 · 巡检日志系统：Xshell式流水日志 + 路径可控
+
+- **背景**：用户规划——除底层核心外，巡检命令、判断关键词、执行过程所有回显通过日志输出，日志保存路径可控；形式类似 Xshell 日志（连接 SSH 后到执行完命令的完整记录）
+- **后端**（batch_inspect.rs / lib.rs / Cargo.toml）：
+  - 新增 chrono 依赖（本地可读时间戳）
+  - batch_execute_inspect：每台设备生成一个日志文件 inspect_设备名_YYYYMMDD_HHMMSS.log，内容为连接→执行→断开全程流水：连接成功/失败、每条命令完整回显（去 ANSI 色码）、故障判断结果与命中依据、健康等级、结束汇总；单命令回显 512KB 截断保护；失败自动重试共用同一日志文件
+  - InspectExecResult 新增 logPath 字段（每台设备日志文件路径）
+  - 新增命令：get_inspect_log_dir（默认 <应用数据目录>/logs/inspect）、set_inspect_log_dir（自定义路径持久化到 inspect_config.json）、open_inspect_log_dir（explorer 打开）、pick_inspect_log_dir（目录选择框）
+- **前端**（App.tsx / tauriBridge.ts / index.css）：
+  - 巡检结果卡片新增“日志”按钮（FolderOpen 图标，悬停显示完整路径，点击打开日志目录）
+  - 设置页“服务器”分组新增“巡检日志”配置：路径输入框 + 浏览…/保存路径/打开日志目录 按钮，加载时读取当前配置
+  - tauriBridge mock 补齐日志相关命令
+- **验证**：cargo check（无警告）+ npm run build 通过
+- **commit**：待提交

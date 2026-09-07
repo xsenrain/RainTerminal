@@ -7371,7 +7371,11 @@ pub fn run() {
             ssh_tunnel_start,
             ssh_tunnel_stop,
             ssh_tunnel_list,
-            batch_execute_inspect
+            batch_execute_inspect,
+            batch_inspect::get_inspect_log_dir,
+            batch_inspect::set_inspect_log_dir,
+            batch_inspect::open_inspect_log_dir,
+            batch_inspect::pick_inspect_log_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

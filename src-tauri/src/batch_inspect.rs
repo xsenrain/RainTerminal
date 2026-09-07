@@ -5,13 +5,16 @@
 //! 支持 Linux（EOF 判定）与网络设备（静默期判定 + 分页翻页）。
 
 use crate::connect_interactive_ssh_session;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// 读取静默期：网络设备 exec 通道不会 EOF，连续多久无数据视为命令输出结束。
 const READ_QUIET_PERIOD_MS: u64 = 800;
@@ -63,6 +66,8 @@ pub struct InspectExecResult {
     pub duration_ms: u64,
     /// 设备整体健康等级：ok / warn / critical（取全部命令最差）
     pub health: String,
+    /// 本次巡检生成的 Xshell 式流水日志文件路径（连接后到执行完的完整记录）
+    pub log_path: Option<String>,
 }
 
 /// 单台设备完成时通过 `inspect-progress` 事件推送。
@@ -89,14 +94,17 @@ pub fn batch_execute_inspect(
     if total == 0 {
         return Vec::new();
     }
+    let log_dir = resolve_inspect_log_dir(&app);
+    let _ = fs::create_dir_all(&log_dir);
     let workers = (concurrency.clamp(1, 200) as usize).min(total);
     let results: Mutex<Vec<Option<InspectExecResult>>> = Mutex::new(vec![None; total]);
     let next_index = AtomicUsize::new(0);
     let done_count = AtomicUsize::new(0);
     let worker_apps: Vec<AppHandle> = (0..workers).map(|_| app.clone()).collect();
+    let worker_log_dirs: Vec<PathBuf> = (0..workers).map(|_| log_dir.clone()).collect();
 
     thread::scope(|scope| {
-        for worker_app in &worker_apps {
+        for (worker_app, worker_log_dir) in worker_apps.iter().zip(worker_log_dirs.iter()) {
             scope.spawn(|| loop {
                 let index = next_index.fetch_add(1, Ordering::SeqCst);
                 if index >= total {
@@ -104,7 +112,8 @@ pub fn batch_execute_inspect(
                 }
                 let device = &devices[index];
                 let started = Instant::now();
-                let result = match execute_device_with_retry(device, &commands) {
+                let (result, log_path) = execute_device_with_retry(device, &commands, worker_log_dir);
+                let result = match result {
                     Ok(outputs) => {
                         let health = aggregate_health(&outputs);
                         InspectExecResult {
@@ -115,6 +124,7 @@ pub fn batch_execute_inspect(
                             outputs,
                             duration_ms: started.elapsed().as_millis() as u64,
                             health,
+                            log_path,
                         }
                     }
                     Err(error) => InspectExecResult {
@@ -125,6 +135,7 @@ pub fn batch_execute_inspect(
                         outputs: Vec::new(),
                         duration_ms: started.elapsed().as_millis() as u64,
                         health: "critical".to_string(),
+                        log_path,
                     },
                 };
                 results.lock().unwrap()[index] = Some(result);
@@ -149,15 +160,57 @@ pub fn batch_execute_inspect(
         .collect()
 }
 
-/// 连接失败时自动重试一次（网络抖动 / 首连慢的常见场景）。
+/// 连接失败时自动重试一次（网络抖动 / 首连慢的常见场景），两次共用同一日志文件。
+/// 返回（执行结果, 日志文件路径）。
 fn execute_device_with_retry(
     device: &InspectDeviceInput,
     commands: &[InspectCommandInput],
-) -> Result<Vec<InspectCommandOutput>, String> {
-    match execute_device(device, commands) {
-        Ok(outputs) => Ok(outputs),
-        Err(_) => execute_device(device, commands),
+    log_dir: &Path,
+) -> (Result<Vec<InspectCommandOutput>, String>, Option<String>) {
+    let file_path = inspect_log_file_path(log_dir, device);
+    let mut log: Vec<String> = Vec::new();
+    log.push("================================================================".to_string());
+    log.push("RainTerminal 巡检日志（连接 → 执行 → 断开 全程流水）".to_string());
+    log.push(format!(
+        "设备: {} | 地址: {}:{} | 厂商: {}",
+        device.name, device.host, device.port, device.vendor
+    ));
+    log.push(format!("开始: {}", Local::now().format("%Y-%m-%d %H:%M:%S")));
+    log.push("----------------------------------------------------------------".to_string());
+
+    let first = execute_device(device, commands, &mut log);
+    if first.is_err() {
+        log.push(format!("[{}] 首次执行失败，自动重试一次", now_time()));
+        log.push("----------------------------------------------------------------".to_string());
     }
+    let result = if first.is_err() {
+        execute_device(device, commands, &mut log)
+    } else {
+        first
+    };
+
+    match &result {
+        Ok(outputs) => {
+            let health = aggregate_health(outputs);
+            log.push("----------------------------------------------------------------".to_string());
+            log.push(format!(
+                "[{}] 巡检结束: 共执行 {} 条命令, 健康等级: {}",
+                now_time(),
+                outputs.len(),
+                health_label(&health)
+            ));
+        }
+        Err(error) => {
+            log.push("----------------------------------------------------------------".to_string());
+            log.push(format!("[{}] 巡检失败: {}", now_time(), error));
+        }
+    }
+    log.push("================================================================".to_string());
+    let _ = fs::create_dir_all(log_dir);
+    let written = fs::write(&file_path, log.join("\n"))
+        .map(|_| file_path.display().to_string())
+        .ok();
+    (result, written)
 }
 
 /// 设备健康 = 全部命令中最差等级。
@@ -173,27 +226,127 @@ fn aggregate_health(outputs: &[InspectCommandOutput]) -> String {
     health.to_string()
 }
 
+/// 执行单台设备：连接 → 顺序执行命令 → 记录到日志流水。返回结果，日志由调用方落盘。
 fn execute_device(
     device: &InspectDeviceInput,
     commands: &[InspectCommandInput],
+    log: &mut Vec<String>,
 ) -> Result<Vec<InspectCommandOutput>, String> {
-    let mut session = connect_interactive_ssh_session(
+    let mut session = match connect_interactive_ssh_session(
         &device.host,
         &device.username,
         &device.password,
         device.port,
-    )?;
+    ) {
+        Ok(session) => {
+            log.push(format!("[{}] SSH 连接成功 ({})", now_time(), device.host));
+            session
+        }
+        Err(error) => {
+            log.push(format!("[{}] SSH 连接失败: {}", now_time(), error));
+            return Err(error);
+        }
+    };
 
     let mut outputs = Vec::with_capacity(commands.len());
     for command in commands {
-        outputs.push(execute_one_command(
+        log.push(format!(
+            "[{}] >>> 执行命令: {}",
+            now_time(),
+            strip_ansi(&command.command)
+        ));
+        let output = execute_one_command(
             &mut session,
             &device.vendor,
             &command.name,
             &command.command,
+        );
+        let clean_output = strip_ansi(&output.output);
+        if !clean_output.trim().is_empty() {
+            log.push(clean_output);
+        }
+        let issue_text = if output.issues.is_empty() {
+            "-".to_string()
+        } else {
+            output.issues.join("; ")
+        };
+        log.push(format!(
+            "[{}] 判断: {} | 依据: {}",
+            now_time(),
+            health_label(&output.health),
+            issue_text
         ));
+        log.push("----------------------------------------------------------------".to_string());
+        outputs.push(output);
     }
     Ok(outputs)
+}
+
+fn health_label(health: &str) -> &'static str {
+    match health {
+        "critical" => "严重",
+        "warn" => "警告",
+        _ => "正常",
+    }
+}
+
+/// 本地时间 [HH:MM:SS]。
+fn now_time() -> String {
+    Local::now().format("%H:%M:%S").to_string()
+}
+
+/// 日志文件名：inspect_设备名_YYYYMMDD_HHMMSS.log（设备名清洗非法字符）。
+fn inspect_log_file_path(log_dir: &Path, device: &InspectDeviceInput) -> PathBuf {
+    let safe_name: String = device
+        .name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe_name = if safe_name.trim().is_empty() {
+        "device".to_string()
+    } else {
+        safe_name
+    };
+    log_dir.join(format!(
+        "inspect_{}_{}.log",
+        safe_name,
+        Local::now().format("%Y%m%d_%H%M%S")
+    ))
+}
+
+/// 去除 ANSI 转义序列（颜色码等），保持日志纯净。
+fn strip_ansi(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            // 跳过 ESC [ ... 字母 或 ESC ] ... BEL 序列
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if ('@'..='~').contains(&next) {
+                        break;
+                    }
+                }
+            } else if chars.peek() == Some(&']') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if next == '\u{07}' {
+                        break;
+                    }
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn execute_one_command(
@@ -467,4 +620,83 @@ impl NoteError for InspectCommandOutput {
         };
         self
     }
+}
+
+/* ============ 巡检日志目录配置 ============ */
+
+const INSPECT_CONFIG_FILE: &str = "inspect_config.json";
+
+fn inspect_config_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(INSPECT_CONFIG_FILE)
+}
+
+/// 解析巡检日志目录：优先使用用户自定义路径（持久化于 inspect_config.json），否则默认
+/// <应用数据目录>/logs/inspect。
+fn resolve_inspect_log_dir(app: &AppHandle) -> PathBuf {
+    if let Ok(content) = fs::read_to_string(inspect_config_path(app)) {
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(dir) = config.get("log_dir").and_then(|v| v.as_str()) {
+                let trimmed = dir.trim();
+                if !trimmed.is_empty() {
+                    return PathBuf::from(trimmed);
+                }
+            }
+        }
+    }
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("logs/inspect"))
+        .join("logs")
+        .join("inspect")
+}
+
+/// 获取当前巡检日志保存路径。
+#[tauri::command]
+pub fn get_inspect_log_dir(app: AppHandle) -> Result<String, String> {
+    Ok(resolve_inspect_log_dir(&app).display().to_string())
+}
+
+/// 设置巡检日志保存路径（自动创建目录并持久化）。
+#[tauri::command]
+pub fn set_inspect_log_dir(app: AppHandle, path: String) -> Result<String, String> {
+    let trimmed = path.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("日志保存路径不能为空".to_string());
+    }
+    let dir = PathBuf::from(&trimmed);
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建日志目录: {error}"))?;
+    let config = serde_json::json!({ "log_dir": dir.display().to_string() });
+    fs::write(
+        inspect_config_path(&app),
+        serde_json::to_string_pretty(&config).unwrap_or_default(),
+    )
+    .map_err(|error| format!("保存日志配置失败: {error}"))?;
+    Ok(dir.display().to_string())
+}
+
+/// 在资源管理器中打开当前巡检日志目录。
+#[tauri::command]
+pub fn open_inspect_log_dir(app: AppHandle) -> Result<(), String> {
+    let dir = resolve_inspect_log_dir(&app);
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建日志目录: {error}"))?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(dir)
+            .spawn()
+            .map_err(|error| format!("打开日志目录失败: {error}"))?;
+    }
+    Ok(())
+}
+
+/// 弹出目录选择框，返回用户选择的日志保存目录（取消时返回 None）。
+#[tauri::command]
+pub fn pick_inspect_log_dir() -> Result<Option<String>, String> {
+    let picked = rfd::FileDialog::new()
+        .set_title("选择巡检日志保存目录")
+        .pick_folder();
+    Ok(picked.map(|path| path.display().to_string()))
 }

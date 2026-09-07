@@ -6567,6 +6567,26 @@ body.native-window-drag-active .monitor-tabs button {
   border-color: var(--accent);
 }
 
+.inspect-log-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inspect-log-open:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .inspect-progress-track {
   flex: 1;
   min-width: 80px;

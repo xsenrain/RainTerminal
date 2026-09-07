@@ -269,6 +269,7 @@ type InspectExecResult = {
   outputs: InspectCommandOutput[]
   durationMs: number
   health: 'ok' | 'warn' | 'critical' | string
+  logPath?: string | null
 }
 
 type DockPanel = 'servers' | 'local' | InspectorTab | null
@@ -2767,6 +2768,7 @@ function App() {
           <SettingsModal
             key="settings-modal"
             onClose={() => setSettingsOpen(false)}
+            onNotify={(message) => setToast(message)}
             onExport={exportServers}
             onImport={importServersFromText}
             onImportSshConfig={importOpenSshConfig}
@@ -10494,6 +10496,14 @@ function InspectWorkspace({
     })
   }
 
+  async function openInspectLogDir() {
+    try {
+      await invoke('open_inspect_log_dir')
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    }
+  }
+
   function resetInspectWorkspace() {
     const message = inspectRunning
       ? t('重置将清空巡检工作台（结果、设备勾选、命令列表）；当前巡检仍在执行中，本次返回的结果会被丢弃，但不会中断正在执行的命令。确定继续吗？')
@@ -11011,6 +11021,17 @@ function InspectWorkspace({
                       {healthLabel(result.health)}
                     </em>
                     <span className="inspect-result-time">{(result.durationMs / 1000).toFixed(1)}s</span>
+                    {result.logPath && (
+                      <button
+                        className="inspect-log-open"
+                        type="button"
+                        title={result.logPath}
+                        onClick={() => void openInspectLogDir()}
+                      >
+                        <FolderOpen size={12} />
+                        {t('日志')}
+                      </button>
+                    )}
                   </div>
                   {!result.success && result.error && <div className="inspect-result-error">{result.error}</div>}
                   {result.outputs.map((output, index) => (
@@ -11555,6 +11576,7 @@ function RemoteDesktopModal({
 
 function SettingsModal({
   onClose,
+  onNotify,
   onExport,
   onImport,
   onImportSshConfig,
@@ -11582,6 +11604,7 @@ function SettingsModal({
   systemTimeZone,
 }: {
   onClose: () => void
+  onNotify: (message: string) => void
   onExport: () => void
   onImport: (value: string) => void
   onImportSshConfig: () => void
@@ -11612,6 +11635,8 @@ function SettingsModal({
   const reduceMotion = useReducedMotion()
   const [importText, setImportText] = useState('')
   const [section, setSection] = useState<'appearance' | 'language' | 'servers' | 'about'>('appearance')
+  const [inspectLogDir, setInspectLogDir] = useState('')
+  const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateResult, setUpdateResult] = useState<AppUpdateCheckResult | null>(null)
   const [updateDownload, setUpdateDownload] = useState<AppUpdateDownloadState>({
@@ -11633,6 +11658,49 @@ function SettingsModal({
   useEffect(() => () => {
     if (copyFeedbackTimerRef.current !== null) window.clearTimeout(copyFeedbackTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke<string>('get_inspect_log_dir')
+      .then((path) => {
+        if (!cancelled) setInspectLogDir(path)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function saveInspectLogDir() {
+    if (inspectLogDirBusy) return
+    setInspectLogDirBusy(true)
+    try {
+      const saved = await invoke<string>('set_inspect_log_dir', { path: inspectLogDir })
+      setInspectLogDir(saved)
+      onNotify(t('巡检日志保存路径已更新'))
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    } finally {
+      setInspectLogDirBusy(false)
+    }
+  }
+
+  async function browseInspectLogDir() {
+    try {
+      const picked = await invoke<string | null>('pick_inspect_log_dir')
+      if (picked) setInspectLogDir(picked)
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    }
+  }
+
+  async function openInspectLogDir() {
+    try {
+      await invoke('open_inspect_log_dir')
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    }
+  }
 
   async function checkForUpdates() {
     if (updateBusy || updateDownload.status === 'downloading' || updateDownload.status === 'launching') return
@@ -12124,6 +12192,39 @@ function SettingsModal({
                 </label>
                 <p className="settings-note">
                   {t('影响远程文件、文件读写和机器监控等辅助 SSH 请求；SSH 终端连接本身不占用这个并发池。')}
+                </p>
+                <div className="settings-section-head settings-section-spaced">
+                  <Activity size={16} />
+                  <div>
+                    <strong>{t('巡检日志')}</strong>
+                    <span>{t('自动化巡检执行过程的流水日志（连接 → 执行 → 断开）保存位置。')}</span>
+                  </div>
+                </div>
+                <label className="field">
+                  <span>{t('日志保存路径')}</span>
+                  <input
+                    value={inspectLogDir}
+                    onChange={(event) => setInspectLogDir(event.target.value)}
+                    placeholder={t('例如 D:\\logs\\inspect')}
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="settings-actions">
+                  <button className="ghost-button" type="button" onClick={() => void browseInspectLogDir()}>
+                    <FolderOpen size={15} />
+                    {t('浏览…')}
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => void saveInspectLogDir()} disabled={inspectLogDirBusy}>
+                    <CheckCircle2 size={15} />
+                    {t('保存路径')}
+                  </button>
+                  <button className="ghost-button" type="button" onClick={() => void openInspectLogDir()}>
+                    <FolderOpen size={15} />
+                    {t('打开日志目录')}
+                  </button>
+                </div>
+                <p className="settings-note">
+                  {t('默认路径为应用数据目录下的 logs\\inspect，修改后对之后的巡检生效。')}
                 </p>
                 <div className="settings-actions">
                   <button className="ghost-button" type="button" onClick={onImportSshConfig}>
