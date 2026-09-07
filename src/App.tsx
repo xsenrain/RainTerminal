@@ -125,6 +125,7 @@ import {
   Trash2,
   Upload,
   Wifi,
+  Wrench,
   X,
 } from 'lucide-react'
 
@@ -416,7 +417,7 @@ type InspectPlan = {
 
 type InspectWorkspaceView = 'workbench' | 'history' | 'rules' | 'plans'
 
-type DockPanel = 'servers' | 'local' | InspectorTab | null
+type DockPanel = 'servers' | 'local' | 'tools' | InspectorTab | null
 
 type GlobalSearchEntry = {
   key: string
@@ -1181,7 +1182,7 @@ function App() {
   const [transferManagerOpen, setTransferManagerOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<DockPanel>(null)
-  const [mainView, setMainView] = useState<'workbench' | 'inspect'>('workbench')
+  const [mainView, setMainView] = useState<'workbench' | 'inspect' | 'tools'>('workbench')
   // 巡检工作台持久状态（跨视图切换保留）
   const [inspectSelectedIds, setInspectSelectedIds] = useState<Set<string>>(new Set())
   const [inspectCommands, setInspectCommands] = useState<{ id: string; name: string; command: string }[]>([])
@@ -2663,6 +2664,12 @@ function App() {
       setActivePanel(null)
       return
     }
+    if (panel === 'tools') {
+      // 小工具为独立全页视图
+      setMainView('tools')
+      setActivePanel(null)
+      return
+    }
     setMainView('workbench')
     setActivePanel((current) => (current === panel ? null : panel))
     if (panel !== 'servers' && panel !== 'local') {
@@ -2686,6 +2693,7 @@ function App() {
         run: '运行命令',
         snippets: '常用命令',
         inspect: '自动化',
+        tools: '小工具',
         history: '执行记录',
         notes: '待办笔记',
       } satisfies Record<Exclude<DockPanel, null>, string>)[activePanel])
@@ -2860,6 +2868,11 @@ function App() {
             setInspectConcurrency={setInspectConcurrency}
             inspectProgress={inspectProgress}
             setInspectProgress={setInspectProgress}
+          />
+        ) : mainView === 'tools' ? (
+          <InspectToolbox
+            onAddInspectDevice={addInspectDevice}
+            onNotify={(message) => setToast(message)}
           />
         ) : (
         <Profiler id="Workbench" onRender={handleRenderProfile}>
@@ -3588,6 +3601,7 @@ function DockRail({
     { panel: 'run', label: '运行命令', icon: <Terminal size={18} /> },
     { panel: 'snippets', label: '常用命令', icon: <Star size={18} /> },
     { panel: 'inspect', label: '自动化', icon: <Activity size={18} /> },
+    { panel: 'tools', label: '小工具', icon: <Wrench size={18} /> },
     { panel: 'history', label: '执行记录', icon: <Clock3 size={18} /> },
     { panel: 'notes', label: '待办笔记', icon: <ClipboardList size={18} /> },
   ]
@@ -10518,6 +10532,142 @@ function Inspector({
   )
 }
 
+function InspectToolbox({
+  onAddInspectDevice,
+  onNotify,
+}: {
+  onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
+  onNotify: (message: string) => void
+}) {
+  const { t } = useAppLocale()
+  const [vendors] = useState<string[]>(() => readInspectVendors())
+  const [discoverCidr, setDiscoverCidr] = useState('192.168.1.0/24')
+  const [discoverScanning, setDiscoverScanning] = useState(false)
+  const [discoverHits, setDiscoverHits] = useState<{ ip: string; open_ports: number[] }[] | null>(null)
+  const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(new Set())
+  const [discoverVendor, setDiscoverVendor] = useState<Record<string, string>>({})
+
+  function guessVendor(ports: number[]): string {
+    if (ports.includes(23) && !ports.includes(22)) return 'other'
+    return 'linux'
+  }
+
+  async function runScan() {
+    if (discoverScanning) return
+    setDiscoverScanning(true)
+    setDiscoverHits(null)
+    setDiscoverSelected(new Set())
+    setDiscoverVendor({})
+    try {
+      const hits = await invoke<{ ip: string; open_ports: number[] }[]>('scan_inspect_network', { cidr: discoverCidr })
+      setDiscoverHits(hits)
+      setDiscoverSelected(new Set(hits.map((h) => h.ip)))
+      setDiscoverVendor(Object.fromEntries(hits.map((h) => [h.ip, guessVendor(h.open_ports)])))
+      if (hits.length === 0) onNotify(t('网段内未发现开放 22/23 端口的设备'))
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    } finally {
+      setDiscoverScanning(false)
+    }
+  }
+
+  function toggleHit(ip: string) {
+    setDiscoverSelected((current) => {
+      const next = new Set(current)
+      if (next.has(ip)) {
+        next.delete(ip)
+      } else {
+        next.add(ip)
+      }
+      return next
+    })
+  }
+
+  async function addDevices() {
+    if (!discoverHits) return
+    const picked = discoverHits.filter((h) => discoverSelected.has(h.ip))
+    if (picked.length === 0) {
+      onNotify(t('请先勾选要添加的设备'))
+      return
+    }
+    for (const hit of picked) {
+      onAddInspectDevice({
+        name: hit.ip,
+        host: hit.ip,
+        port: hit.open_ports.includes(22) ? 22 : 23,
+        username: '',
+        password: '',
+        vendor: discoverVendor[hit.ip] ?? guessVendor(hit.open_ports),
+        remark: t('网段发现'),
+      })
+    }
+    onNotify(`${t('已添加')} ${picked.length} ${t('台设备到巡检设备列表，请编辑补全账号密码')}`)
+    setDiscoverHits(null)
+  }
+
+  return (
+    <div className="inspect-toolbox">
+      <div className="inspect-toolbox-header">
+        <strong>{t('小工具')}</strong>
+        <span>{t('常用网络与运维小工具集合，结果可直接汇入巡检设备清单')}</span>
+      </div>
+      <div className="inspect-toolbox-grid">
+        <div className="inspect-toolbox-card">
+          <div className="inspect-toolbox-card-head">
+            <Wrench size={15} />
+            <strong>{t('网段发现')}</strong>
+            <span>{t('探测网段内开放 22(SSH)/23(Telnet) 端口的设备，批量生成巡检设备清单，支持 /16 ~ /30')}</span>
+          </div>
+          <div className="inspect-discover-row">
+            <input
+              value={discoverCidr}
+              onChange={(event) => setDiscoverCidr(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void runScan()
+              }}
+              placeholder="192.168.1.0/24"
+              disabled={discoverScanning}
+            />
+            <button className="utility-primary-button compact" type="button" onClick={() => void runScan()} disabled={discoverScanning}>
+              <Search size={13} />
+              {discoverScanning ? t('扫描中…') : t('开始扫描')}
+            </button>
+          </div>
+          {discoverHits && (
+            <>
+              <div className="inspect-discover-results">
+                {discoverHits.length === 0 && <div className="inspect-discover-empty">{t('网段内未发现开放 22/23 端口的设备')}</div>}
+                {discoverHits.map((hit) => (
+                  <div className="inspect-discover-hit" key={hit.ip}>
+                    <label>
+                      <input type="checkbox" checked={discoverSelected.has(hit.ip)} onChange={() => toggleHit(hit.ip)} />
+                    </label>
+                    <strong>{hit.ip}</strong>
+                    <span className="inspect-discover-ports">
+                      {hit.open_ports.map((p) => (p === 22 ? t('SSH') : p === 23 ? t('Telnet') : String(p))).join(' / ')}
+                    </span>
+                    <select value={discoverVendor[hit.ip] ?? guessVendor(hit.open_ports)} onChange={(event) => setDiscoverVendor((prev) => ({ ...prev, [hit.ip]: event.target.value }))}>
+                      {vendors.map((vendor) => (
+                        <option key={vendor} value={vendor}>{vendor}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div className="inspect-discover-actions">
+                <button className="utility-primary-button compact" type="button" onClick={() => void addDevices()}>
+                  <Plus size={13} />
+                  {t('添加勾选设备')} ({discoverSelected.size})
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InspectWorkspace({
   inspectDevices,
   onAddInspectDevice,
@@ -10600,70 +10750,6 @@ function InspectWorkspace({
   const [inspectVendors, setInspectVendors] = useState<string[]>(() => readInspectVendors())
   const [inspectVendorsOpen, setInspectVendorsOpen] = useState(false)
   const [inspectVendorInput, setInspectVendorInput] = useState('')
-  const [inspectDiscoverOpen, setInspectDiscoverOpen] = useState(false)
-  const [inspectDiscoverCidr, setInspectDiscoverCidr] = useState('192.168.1.0/24')
-  const [inspectDiscoverScanning, setInspectDiscoverScanning] = useState(false)
-  const [inspectDiscoverHits, setInspectDiscoverHits] = useState<{ ip: string; open_ports: number[] }[] | null>(null)
-  const [inspectDiscoverSelected, setInspectDiscoverSelected] = useState<Set<string>>(new Set())
-  const [inspectDiscoverVendor, setInspectDiscoverVendor] = useState<Record<string, string>>({})
-  function inspectGuessVendor(ports: number[]): string {
-    if (ports.includes(23) && !ports.includes(22)) return 'other'
-    return 'linux'
-  }
-
-  async function runInspectNetworkScan() {
-    if (inspectDiscoverScanning) return
-    setInspectDiscoverScanning(true)
-    setInspectDiscoverHits(null)
-    setInspectDiscoverSelected(new Set())
-    setInspectDiscoverVendor({})
-    try {
-      const hits = await invoke<{ ip: string; open_ports: number[] }[]>('scan_inspect_network', { cidr: inspectDiscoverCidr })
-      setInspectDiscoverHits(hits)
-      setInspectDiscoverSelected(new Set(hits.map((h) => h.ip)))
-      setInspectDiscoverVendor(Object.fromEntries(hits.map((h) => [h.ip, inspectGuessVendor(h.open_ports)])))
-      if (hits.length === 0) onNotify(t('网段内未发现开放 22/23 端口的设备'))
-    } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
-    } finally {
-      setInspectDiscoverScanning(false)
-    }
-  }
-
-  function toggleInspectDiscoverHit(ip: string) {
-    setInspectDiscoverSelected((current) => {
-      const next = new Set(current)
-      if (next.has(ip)) {
-        next.delete(ip)
-      } else {
-        next.add(ip)
-      }
-      return next
-    })
-  }
-
-  async function addInspectDiscoverDevices() {
-    if (!inspectDiscoverHits) return
-    const picked = inspectDiscoverHits.filter((h) => inspectDiscoverSelected.has(h.ip))
-    if (picked.length === 0) {
-      onNotify(t('请先勾选要添加的设备'))
-      return
-    }
-    for (const hit of picked) {
-      onAddInspectDevice({
-        name: hit.ip,
-        host: hit.ip,
-        port: hit.open_ports.includes(22) ? 22 : 23,
-        username: '',
-        password: '',
-        vendor: inspectDiscoverVendor[hit.ip] ?? inspectGuessVendor(hit.open_ports),
-        remark: t('网段发现'),
-      })
-    }
-    onNotify(`${t('已添加')} ${picked.length} ${t('台设备，请编辑补全账号密码')}`)
-    setInspectDiscoverOpen(false)
-    setInspectDiscoverHits(null)
-  }
   const [inspectHistory, setInspectHistory] = useState<InspectHistoryMeta[] | null>(null)
   const [inspectHistoryDetail, setInspectHistoryDetail] = useState<InspectHistoryRecord | null>(null)
   const [inspectRules, setInspectRules] = useState<InspectRuleConfig[] | null>(null)
@@ -11540,10 +11626,6 @@ function InspectWorkspace({
         <div className="inspect-device-pane">
           <div className="inspect-pane-head">
             <strong>{t('设备列表')} ({inspectDevices.length})</strong>
-            <button className="utility-text-button" type="button" onClick={() => setInspectDiscoverOpen((open) => !open)}>
-              <Search size={13} />
-              {t('网段发现')}
-            </button>
             <button className="utility-text-button" type="button" onClick={() => setInspectVendorsOpen((open) => !open)}>
               <Settings2 size={13} />
               {t('管理厂商')}
@@ -11588,60 +11670,6 @@ function InspectWorkspace({
               <div className="inspect-vendor-manager-hint">
                 {t('厂商列表永久保存；删除后已添加设备的厂商标记保留，仅不再出现在下拉选项中')}
               </div>
-            </div>
-          )}
-
-          {inspectDiscoverOpen && (
-            <div className="inspect-discover-panel">
-              <div className="inspect-discover-row">
-                <input
-                  value={inspectDiscoverCidr}
-                  onChange={(event) => setInspectDiscoverCidr(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void runInspectNetworkScan()
-                  }}
-                  placeholder="192.168.1.0/24"
-                  disabled={inspectDiscoverScanning}
-                />
-                <button className="utility-primary-button compact" type="button" onClick={() => void runInspectNetworkScan()} disabled={inspectDiscoverScanning}>
-                  <Search size={13} />
-                  {inspectDiscoverScanning ? t('扫描中…') : t('开始扫描')}
-                </button>
-                <button className="utility-text-button compact" type="button" onClick={() => setInspectDiscoverOpen(false)}>
-                  <X size={13} />
-                  {t('收起')}
-                </button>
-              </div>
-              <div className="inspect-discover-hint">{t('探测网段内开放 22(SSH)/23(Telnet) 端口的设备，支持 /16 ~ /30')}</div>
-              {inspectDiscoverHits && (
-                <>
-                  <div className="inspect-discover-results">
-                    {inspectDiscoverHits.length === 0 && <div className="inspect-discover-empty">{t('未发现在线设备')}</div>}
-                    {inspectDiscoverHits.map((hit) => (
-                      <div className="inspect-discover-hit" key={hit.ip}>
-                        <label>
-                          <input type="checkbox" checked={inspectDiscoverSelected.has(hit.ip)} onChange={() => toggleInspectDiscoverHit(hit.ip)} />
-                        </label>
-                        <strong>{hit.ip}</strong>
-                        <span className="inspect-discover-ports">
-                          {hit.open_ports.map((p) => (p === 22 ? t('SSH') : p === 23 ? t('Telnet') : String(p))).join(' / ')}
-                        </span>
-                        <select value={inspectDiscoverVendor[hit.ip] ?? inspectGuessVendor(hit.open_ports)} onChange={(event) => setInspectDiscoverVendor((prev) => ({ ...prev, [hit.ip]: event.target.value }))}>
-                          {inspectVendors.map((vendor) => (
-                            <option key={vendor} value={vendor}>{vendor}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="inspect-discover-actions">
-                    <button className="utility-primary-button compact" type="button" onClick={() => void addInspectDiscoverDevices()}>
-                      <Plus size={13} />
-                      {t('添加勾选设备')} ({inspectDiscoverSelected.size})
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           )}
 
