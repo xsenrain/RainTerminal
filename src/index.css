@@ -7474,3 +7474,8 @@ body.native-window-drag-active .monitor-tabs button {
   font-weight: 700;
   opacity: 0.45;
 }
+
+.scan-port-pending {
+  color: var(--text-tertiary, #8b949e);
+  opacity: 0.6;
+}

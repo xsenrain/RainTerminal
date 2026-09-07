@@ -191,7 +191,7 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       return new TextDecoder().decode(bytes) as T
     }
     case 'scan_inspect_network': {
-      // 沙箱 mock：模拟前 5 个 IP 在线
+      // 沙箱 mock：模拟流式（先 alive 后 port）
       const startIp = typeof args.start_ip === 'string' ? args.start_ip : '192.168.1.1'
       const endIp = typeof args.end_ip === 'string' ? args.end_ip : '192.168.1.254'
       const seg = startIp.split('.').slice(0, 3).join('.')
@@ -205,6 +205,15 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
           open_ports: n % 3 === 0 ? [22, 80] : n % 2 === 0 ? [23, 3389] : [22],
         })
       }
+      list.forEach((row, index) => {
+        window.setTimeout(() => emitSandbox('inspect-scan-alive', { ip: row.ip, name: row.name }), 250 + index * 180)
+        window.setTimeout(
+          () => emitSandbox('inspect-scan-port', { ip: row.ip, open_ports: row.open_ports }),
+          420 + index * 180,
+        )
+      })
+      window.setTimeout(() => emitSandbox('inspect-scan-progress', { phase: 'alive', scanned: list.length, total: list.length }), 600)
+      window.setTimeout(() => emitSandbox('inspect-scan-progress', { phase: 'ports', scanned: list.length, total: list.length }), 1000)
       return list as T
     }
     case 'batch_execute_inspect': {

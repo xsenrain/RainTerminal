@@ -1138,7 +1138,7 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（端口探测，异步 + 进度事件） ====================
+// ==================== 网段发现（两阶段流式：先存活 → 再端口） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
@@ -1152,9 +1152,15 @@ fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
     std::net::TcpStream::connect_timeout(&addr, timeout).is_ok()
 }
 
+/// 反向域名解析，带 600ms 超时兜底（DNS 慢时不阻塞扫描）。
 fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
-    match dns_lookup::lookup_addr(&std::net::IpAddr::V4(ip)) {
-        Ok(name) => {
+    let (tx, rx) = std::sync::mpsc::channel::<std::io::Result<String>>();
+    let ip_clone = ip;
+    std::thread::spawn(move || {
+        let _ = tx.send(dns_lookup::lookup_addr(&std::net::IpAddr::V4(ip_clone)));
+    });
+    match rx.recv_timeout(Duration::from_millis(600)) {
+        Ok(Ok(name)) => {
             let name = name.trim_end_matches('.').to_string();
             if name.is_empty() || name == ip.to_string() {
                 String::new()
@@ -1162,12 +1168,14 @@ fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
                 name
             }
         }
-        Err(_) => String::new(),
+        _ => String::new(),
     }
 }
 
-/// 扫描 [start_ip, end_ip] 范围内开放常用服务端口的设备（异步执行，不阻塞主线程）。
-/// 探测 22/23/3389/5900/21/80/443，附带反向域名解析，进度通过 inspect-scan-progress 事件推送。
+/// 扫描 [start_ip, end_ip] 范围内设备，两阶段流式（async + spawn_blocking，不阻塞主线程）：
+/// 1. 存活检测：快速探测 22/23/445/80/443（200ms 超时，128 IP/批并发），命中立即推送 inspect-scan-alive
+/// 2. 端口探测：对存活 IP 探测 22/23/3389/5900/21/80/443（500ms 超时，64 IP/批并发），逐台推送 inspect-scan-port
+/// 进度：每批推送 inspect-scan-progress（phase: alive|ports）
 #[tauri::command]
 pub async fn scan_inspect_network(
     app: tauri::AppHandle,
@@ -1187,46 +1195,94 @@ pub async fn scan_inspect_network(
             return Err("扫描范围过大，最多支持 8192 个 IP（如 /19）".into());
         }
 
+        let alive_ports: [u16; 5] = [22, 23, 445, 80, 443];
         let probe_ports: [u16; 7] = [22, 23, 3389, 5900, 21, 80, 443];
-        let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let processed = Arc::new(AtomicUsize::new(0));
 
-        // 按 64 个 IP 一块分片，每块一个线程；线程结束后推送一次进度事件
+        // ---------- 阶段 1：存活检测（128 IP/批），命中立即推送 ----------
+        let alive: Arc<std::sync::Mutex<Vec<(std::net::Ipv4Addr, String)>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let processed = Arc::new(AtomicUsize::new(0));
         let mut handles = Vec::new();
-        const CHUNK: usize = 64;
         let mut idx = 0usize;
         while idx < count {
-            let chunk_len = CHUNK.min(count - idx);
-            let chunk_start = start_u + idx as u32;
-            let hits = Arc::clone(&hits);
+            let batch_len = 128usize.min(count - idx);
+            let batch_start = start_u + idx as u32;
+            let alive = Arc::clone(&alive);
             let processed = Arc::clone(&processed);
             let app = app.clone();
             handles.push(std::thread::spawn(move || {
-                for j in 0..chunk_len {
-                    let ip = std::net::Ipv4Addr::from(chunk_start + j as u32);
+                for j in 0..batch_len {
+                    let ip = std::net::Ipv4Addr::from(batch_start + j as u32);
+                    let mut up = false;
+                    for port in alive_ports {
+                        if tcp_probe(ip, port, Duration::from_millis(200)) {
+                            up = true;
+                            break;
+                        }
+                    }
+                    if up {
+                        let name = reverse_hostname(ip);
+                        alive.lock().unwrap().push((ip, name.clone()));
+                        let _ = app.emit(
+                            "inspect-scan-alive",
+                            serde_json::json!({ "ip": ip.to_string(), "name": name }),
+                        );
+                    }
+                }
+                let done = processed.fetch_add(batch_len, Ordering::SeqCst) + batch_len;
+                let _ = app.emit(
+                    "inspect-scan-progress",
+                    serde_json::json!({ "phase": "alive", "scanned": done, "total": count }),
+                );
+            }));
+            idx += batch_len;
+        }
+        for handle in handles {
+            let _ = handle.join();
+        }
+
+        // ---------- 阶段 2：端口探测（64 IP/批），逐台推送 ----------
+        let alive_list = alive.lock().unwrap().clone();
+        let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let processed2 = Arc::new(AtomicUsize::new(0));
+        let port_total = alive_list.len();
+        let mut handles2 = Vec::new();
+        let mut idx2 = 0usize;
+        while idx2 < port_total {
+            let batch_len = 64usize.min(port_total - idx2);
+            let batch_start = idx2;
+            let hits = Arc::clone(&hits);
+            let processed = Arc::clone(&processed2);
+            let alive_list = alive_list.clone();
+            let app = app.clone();
+            handles2.push(std::thread::spawn(move || {
+                for j in 0..batch_len {
+                    let (ip, name) = &alive_list[batch_start + j];
                     let mut open = Vec::new();
                     for port in probe_ports {
-                        if tcp_probe(ip, port, Duration::from_millis(500)) {
+                        if tcp_probe(*ip, port, Duration::from_millis(500)) {
                             open.push(port);
                         }
                     }
-                    if !open.is_empty() {
-                        hits.lock().unwrap().push(InspectScanHit {
-                            ip: ip.to_string(),
-                            name: reverse_hostname(ip),
-                            open_ports: open,
-                        });
-                    }
+                    hits.lock().unwrap().push(InspectScanHit {
+                        ip: ip.to_string(),
+                        name: name.clone(),
+                        open_ports: open.clone(),
+                    });
+                    let _ = app.emit(
+                        "inspect-scan-port",
+                        serde_json::json!({ "ip": ip.to_string(), "open_ports": open }),
+                    );
                 }
-                let done = processed.fetch_add(chunk_len, Ordering::SeqCst) + chunk_len;
+                let done = processed.fetch_add(batch_len, Ordering::SeqCst) + batch_len;
                 let _ = app.emit(
                     "inspect-scan-progress",
-                    serde_json::json!({ "scanned": done, "total": count }),
+                    serde_json::json!({ "phase": "ports", "scanned": done, "total": port_total }),
                 );
             }));
-            idx += chunk_len;
+            idx2 += batch_len;
         }
-        for handle in handles {
+        for handle in handles2 {
             let _ = handle.join();
         }
 
