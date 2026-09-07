@@ -10613,30 +10613,24 @@ function InspectWorkspace({
     return health === 'ok' ? t('正常') : health === 'warn' ? t('警告') : health === 'critical' ? t('严重') : health
   }
 
-  async function exportInspectResults(format: 'json' | 'csv') {
+  async function exportInspectResultsCsv() {
     if (!inspectResults) return
     const date = new Date().toISOString().slice(0, 10)
     try {
-      if (format === 'json') {
-        await invoke('save_text_export', {
-          suggestedName: `巡检报告-${date}.json`,
-          content: JSON.stringify(inspectResults, null, 2),
-          filter: 'json',
-        })
-      } else {
-        const header = ['设备名称', '主机', '健康状态', '执行结果', '耗时(秒)', '问题'].map(escapeCsvCell).join(',')
-        const rows = inspectResults.map((result) => {
-          const issues = result.outputs.flatMap((output) => output.issues).join('; ')
-          return [result.deviceName, result.host, healthLabel(result.health), result.success ? t('成功') : t('失败'), (result.durationMs / 1000).toFixed(1), issues]
-            .map(escapeCsvCell)
-            .join(',')
-        })
-        await invoke('save_text_export', {
-          suggestedName: `巡检汇总-${date}.csv`,
-          content: `\uFEFF${[header, ...rows].join('\r\n')}`,
-          filter: 'csv',
-        })
-      }
+      const header = ['设备名称', '主机', '健康状态', '执行结果', '耗时(秒)', '命令', '判断依据', '日志文件'].map(escapeCsvCell).join(',')
+      const rows = inspectResults.map((result) => {
+        const commands = result.outputs.map((output) => output.command).join(' | ')
+        const issues = result.outputs.flatMap((output) => output.issues).join('; ') || '-'
+        const logFile = result.logPath ?? ''
+        return [result.deviceName, result.host, healthLabel(result.health), result.success ? t('成功') : t('失败'), (result.durationMs / 1000).toFixed(1), commands, issues, logFile]
+          .map(escapeCsvCell)
+          .join(',')
+      })
+      await invoke('save_text_export', {
+        suggestedName: `巡检汇总-${date}.csv`,
+        content: `\uFEFF${[header, ...rows].join('\r\n')}`,
+        filter: 'csv',
+      })
     } catch (reason) {
       onNotify(`导出失败：${String(reason).replace(/^Error:\s*/i, '')}`)
     }
@@ -11082,11 +11076,9 @@ function InspectWorkspace({
             )}
             {inspectResults && !inspectRunning && (
               <div className="inspect-export-actions">
-                <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('json')}>
-                  {t('导出 JSON')}
-                </button>
-                <button className="utility-text-button" type="button" onClick={() => void exportInspectResults('csv')}>
-                  {t('导出 CSV')}
+                <button className="utility-text-button" type="button" onClick={() => void exportInspectResultsCsv()}>
+                  <Download size={13} />
+                  {t('导出表格')}
                 </button>
               </div>
             )}
