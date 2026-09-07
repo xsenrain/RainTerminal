@@ -202,9 +202,9 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       }) as T
     }
     case 'get_inspect_log_dir':
-      return 'C:/Users/sandbox/logs/inspect' as T
+      return 'C:/Users/sandbox' as T
     case 'set_inspect_log_dir': {
-      const path = typeof args.path === 'string' ? args.path : 'C:/Users/sandbox/logs/inspect'
+      const path = typeof args.path === 'string' ? args.path : 'C:/Users/sandbox'
       return path as T
     }
     case 'open_inspect_log_dir':

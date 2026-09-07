@@ -633,8 +633,8 @@ fn inspect_config_path(app: &AppHandle) -> PathBuf {
         .join(INSPECT_CONFIG_FILE)
 }
 
-/// 解析巡检日志目录：优先使用用户自定义路径（持久化于 inspect_config.json），否则默认
-/// <应用数据目录>/logs/inspect。
+/// 解析巡检日志目录：优先使用用户自定义路径（持久化于 inspect_config.json），
+/// 否则默认使用软件运行目录（exe 所在目录）。
 fn resolve_inspect_log_dir(app: &AppHandle) -> PathBuf {
     if let Ok(content) = fs::read_to_string(inspect_config_path(app)) {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -647,10 +647,8 @@ fn resolve_inspect_log_dir(app: &AppHandle) -> PathBuf {
         }
     }
     app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("logs/inspect"))
-        .join("logs")
-        .join("inspect")
+        .executable_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// 获取当前巡检日志保存路径。

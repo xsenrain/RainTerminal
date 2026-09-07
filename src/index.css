@@ -6587,6 +6587,42 @@ body.native-window-drag-active .monitor-tabs button {
   border-color: var(--accent);
 }
 
+.inspect-log-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--border-medium);
+}
+
+.inspect-log-settings-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.inspect-log-settings input {
+  flex: 1 1 180px;
+  min-width: 120px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-sm);
+}
+
+.inspect-log-settings input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .inspect-progress-track {
   flex: 1;
   min-width: 80px;

@@ -93,6 +93,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  FileClock,
   FolderOpen,
   FolderTree,
   GripVertical,
@@ -2768,7 +2769,6 @@ function App() {
           <SettingsModal
             key="settings-modal"
             onClose={() => setSettingsOpen(false)}
-            onNotify={(message) => setToast(message)}
             onExport={exportServers}
             onImport={importServersFromText}
             onImportSshConfig={importOpenSshConfig}
@@ -10384,6 +10384,43 @@ function InspectWorkspace({
   const [inspectTemplateSearch, setInspectTemplateSearch] = useState('')
   // 重置后丢弃本次巡检返回的结果（执行中无法中断，返回时不再写入界面）
   const discardInspectResultRef = useRef(false)
+  const [inspectLogDir, setInspectLogDir] = useState('')
+  const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke<string>('get_inspect_log_dir')
+      .then((path) => {
+        if (!cancelled) setInspectLogDir(path)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function saveInspectLogDir() {
+    if (inspectLogDirBusy) return
+    setInspectLogDirBusy(true)
+    try {
+      const saved = await invoke<string>('set_inspect_log_dir', { path: inspectLogDir })
+      setInspectLogDir(saved)
+      onNotify(t('巡检日志保存路径已更新'))
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    } finally {
+      setInspectLogDirBusy(false)
+    }
+  }
+
+  async function browseInspectLogDir() {
+    try {
+      const picked = await invoke<string | null>('pick_inspect_log_dir')
+      if (picked) setInspectLogDir(picked)
+    } catch (reason) {
+      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+    }
+  }
 
   function openInspectEditor(device?: InspectDevice) {
     if (device) {
@@ -10982,6 +11019,28 @@ function InspectWorkspace({
               </div>
             )}
           </div>
+          <div className="inspect-log-settings">
+            <span className="inspect-log-settings-label">
+              <FileClock size={13} />
+              {t('巡检日志')}
+            </span>
+            <input
+              value={inspectLogDir}
+              onChange={(event) => setInspectLogDir(event.target.value)}
+              placeholder={t('日志保存路径，默认软件运行目录')}
+              title={inspectLogDir}
+              spellCheck={false}
+            />
+            <button className="utility-text-button" type="button" onClick={() => void browseInspectLogDir()}>
+              {t('浏览…')}
+            </button>
+            <button className="utility-text-button" type="button" onClick={() => void saveInspectLogDir()} disabled={inspectLogDirBusy}>
+              {t('保存')}
+            </button>
+            <button className="utility-text-button" type="button" onClick={() => void openInspectLogDir()}>
+              {t('打开目录')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -11576,7 +11635,6 @@ function RemoteDesktopModal({
 
 function SettingsModal({
   onClose,
-  onNotify,
   onExport,
   onImport,
   onImportSshConfig,
@@ -11604,7 +11662,6 @@ function SettingsModal({
   systemTimeZone,
 }: {
   onClose: () => void
-  onNotify: (message: string) => void
   onExport: () => void
   onImport: (value: string) => void
   onImportSshConfig: () => void
@@ -11635,8 +11692,6 @@ function SettingsModal({
   const reduceMotion = useReducedMotion()
   const [importText, setImportText] = useState('')
   const [section, setSection] = useState<'appearance' | 'language' | 'servers' | 'about'>('appearance')
-  const [inspectLogDir, setInspectLogDir] = useState('')
-  const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateResult, setUpdateResult] = useState<AppUpdateCheckResult | null>(null)
   const [updateDownload, setUpdateDownload] = useState<AppUpdateDownloadState>({
@@ -11658,49 +11713,6 @@ function SettingsModal({
   useEffect(() => () => {
     if (copyFeedbackTimerRef.current !== null) window.clearTimeout(copyFeedbackTimerRef.current)
   }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    void invoke<string>('get_inspect_log_dir')
-      .then((path) => {
-        if (!cancelled) setInspectLogDir(path)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  async function saveInspectLogDir() {
-    if (inspectLogDirBusy) return
-    setInspectLogDirBusy(true)
-    try {
-      const saved = await invoke<string>('set_inspect_log_dir', { path: inspectLogDir })
-      setInspectLogDir(saved)
-      onNotify(t('巡检日志保存路径已更新'))
-    } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
-    } finally {
-      setInspectLogDirBusy(false)
-    }
-  }
-
-  async function browseInspectLogDir() {
-    try {
-      const picked = await invoke<string | null>('pick_inspect_log_dir')
-      if (picked) setInspectLogDir(picked)
-    } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
-    }
-  }
-
-  async function openInspectLogDir() {
-    try {
-      await invoke('open_inspect_log_dir')
-    } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
-    }
-  }
 
   async function checkForUpdates() {
     if (updateBusy || updateDownload.status === 'downloading' || updateDownload.status === 'launching') return
@@ -12192,39 +12204,6 @@ function SettingsModal({
                 </label>
                 <p className="settings-note">
                   {t('影响远程文件、文件读写和机器监控等辅助 SSH 请求；SSH 终端连接本身不占用这个并发池。')}
-                </p>
-                <div className="settings-section-head settings-section-spaced">
-                  <Activity size={16} />
-                  <div>
-                    <strong>{t('巡检日志')}</strong>
-                    <span>{t('自动化巡检执行过程的流水日志（连接 → 执行 → 断开）保存位置。')}</span>
-                  </div>
-                </div>
-                <label className="field">
-                  <span>{t('日志保存路径')}</span>
-                  <input
-                    value={inspectLogDir}
-                    onChange={(event) => setInspectLogDir(event.target.value)}
-                    placeholder={t('例如 D:\\logs\\inspect')}
-                    spellCheck={false}
-                  />
-                </label>
-                <div className="settings-actions">
-                  <button className="ghost-button" type="button" onClick={() => void browseInspectLogDir()}>
-                    <FolderOpen size={15} />
-                    {t('浏览…')}
-                  </button>
-                  <button className="ghost-button" type="button" onClick={() => void saveInspectLogDir()} disabled={inspectLogDirBusy}>
-                    <CheckCircle2 size={15} />
-                    {t('保存路径')}
-                  </button>
-                  <button className="ghost-button" type="button" onClick={() => void openInspectLogDir()}>
-                    <FolderOpen size={15} />
-                    {t('打开日志目录')}
-                  </button>
-                </div>
-                <p className="settings-note">
-                  {t('默认路径为应用数据目录下的 logs\\inspect，修改后对之后的巡检生效。')}
                 </p>
                 <div className="settings-actions">
                   <button className="ghost-button" type="button" onClick={onImportSshConfig}>

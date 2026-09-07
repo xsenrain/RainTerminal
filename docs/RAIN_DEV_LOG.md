@@ -282,3 +282,9 @@
   - tauriBridge mock 补齐日志相关命令
 - **验证**：cargo check（无警告）+ npm run build 通过
 - **commit**：待提交
+
+### 2026-09-07 · 巡检日志设置调整（按用户要求）
+- 巡检日志设置从"设置页 → 服务器"移至**自动化页面**（执行按钮下方新增"巡检日志"行：路径输入框 + 浏览…/保存/打开目录）
+- 默认日志路径改为**软件运行目录**（exe 所在目录，不再用 %LOCALAPPDATA% 下的 logs/inspect）
+- 移除设置页相关配置块与 onNotify prop
+- 验证：cargo check（无警告）+ npm run build 通过
