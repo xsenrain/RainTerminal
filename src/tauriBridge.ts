@@ -190,6 +190,16 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       )
       return new TextDecoder().decode(bytes) as T
     }
+    case 'scan_inspect_network': {
+      // 沙箱 mock：模拟前 5 个 IP 在线（22/23 端口）
+      const cidr = typeof args.cidr === 'string' ? args.cidr : '192.168.1.0/24'
+      const ipPart = cidr.split('/')[0] ?? '192.168.1.0'
+      const seg = ipPart.split('.').slice(0, 3).join('.')
+      return Array.from({ length: 5 }, (_, i) => ({
+        ip: `${seg}.${i + 1}`,
+        open_ports: i % 2 === 0 ? [22] : [23],
+      })) as T
+    }
     case 'batch_execute_inspect': {
       const devices = Array.isArray(args.devices) ? args.devices : []
       const commands = Array.isArray(args.commands) ? args.commands : []

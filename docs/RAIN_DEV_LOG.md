@@ -450,3 +450,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 执行链路（手动巡检 / 定时计划）在执行前批量解密密码，不影响使用
   - tauriBridge 沙箱 mock 增加 encrypt/decrypt（hex 模拟，真实加密在 Rust 端）
 - **验证**：npm run build 通过、cargo check 通过
+
+
+---
+
+## 2026-09-08 · P3 补充：网段发现（批量生成设备清单）
+
+- **改动文件**：`src/App.tsx`、`src/index.css`、`src/tauriBridge.ts`、`src-tauri/src/batch_inspect.rs`、`src-tauri/src/lib.rs`、`docs/RAIN_DEV_LOG.md`
+- **后端**：新增 `scan_inspect_network(cidr)` 命令——解析 CIDR（支持 /16~30，防超大网段），逐 IP 并行探测 22(SSH)/23(Telnet) 端口（600ms 超时，64 并发线程），返回在线设备 IP + 开放端口
+- **前端**：巡检工作台设备列表头部新增「网段发现」按钮，展开面板：
+  - 输入网段（如 192.168.1.0/24）→ 开始扫描 → 显示在线设备（IP + SSH/Telnet 标签 + 厂商下拉，默认：23 开无 22 → other，其余 linux，可手动改）
+  - 勾选后「添加勾选设备」批量生成设备清单（名称/主机=IP，端口取 22 或 23，备注"网段发现"，账号密码留空待填）
+- **沙箱 mock**：模拟返回网段前 5 个 IP
+- **验证**：npm run build 通过、cargo check 通过

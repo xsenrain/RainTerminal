@@ -7386,6 +7386,7 @@ pub fn run() {
             batch_inspect::open_inspect_log_file,
             batch_inspect::encrypt_secret,
             batch_inspect::decrypt_secret,
+            batch_inspect::scan_inspect_network,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

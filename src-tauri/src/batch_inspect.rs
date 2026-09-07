@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 读取静默期：网络设备 exec 通道不会 EOF，连续多久无数据视为命令输出结束。
@@ -1136,3 +1137,86 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
         decode_hex(&cipher).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
     }
 }
+
+// ==================== 网段发现（端口探测） ====================
+
+#[derive(serde::Serialize, Clone)]
+pub struct InspectScanHit {
+    pub ip: String,
+    pub open_ports: Vec<u16>,
+}
+
+fn parse_cidr(cidr: &str) -> Result<(std::net::Ipv4Addr, u8), String> {
+    let trimmed = cidr.trim();
+    let (ip_part, prefix_part) = trimmed
+        .split_once('/')
+        .ok_or_else(|| "格式应为 192.168.1.0/24".to_string())?;
+    let prefix: u8 = prefix_part
+        .trim()
+        .parse()
+        .map_err(|_| "子网掩码无效".to_string())?;
+    let ip: std::net::Ipv4Addr = ip_part
+        .trim()
+        .parse()
+        .map_err(|_| "IP 地址无效".to_string())?;
+    Ok((ip, prefix))
+}
+
+fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
+    let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(ip), port);
+    std::net::TcpStream::connect_timeout(&addr, timeout).is_ok()
+}
+
+/// 扫描网段内开放 22/23 端口的在线设备。仅支持 /16 ~ /30，逐 IP 并行探测。
+#[tauri::command]
+pub fn scan_inspect_network(cidr: String) -> Result<Vec<InspectScanHit>, String> {
+    let (base_ip, prefix) = parse_cidr(&cidr)?;
+    if !(16..=30).contains(&prefix) {
+        return Err("仅支持 /16 到 /30 的网段".into());
+    }
+    let host_count = 1usize << (32 - prefix as u32);
+    let base_u32 = u32::from(base_ip);
+
+    let mut ips = Vec::with_capacity(host_count.saturating_sub(2));
+    for i in 1..host_count.saturating_sub(1) {
+        ips.push(std::net::Ipv4Addr::from(base_u32 + i as u32));
+    }
+
+    let probe_ports = [22u16, 23u16];
+    let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut handles = Vec::new();
+    const CHUNK: usize = 64;
+
+    for chunk in ips.chunks(CHUNK) {
+        let chunk = chunk.to_vec();
+        let hits = Arc::clone(&hits);
+        handles.push(std::thread::spawn(move || {
+            for ip in chunk {
+                let mut open = Vec::new();
+                for port in probe_ports {
+                    if tcp_probe(ip, port, Duration::from_millis(600)) {
+                        open.push(port);
+                    }
+                }
+                if !open.is_empty() {
+                    hits.lock().unwrap().push(InspectScanHit {
+                        ip: ip.to_string(),
+                        open_ports: open,
+                    });
+                }
+            }
+        }));
+    }
+    for handle in handles {
+        let _ = handle.join();
+    }
+
+    let mut result = hits.lock().unwrap().clone();
+    result.sort_by_key(|hit| {
+        hit.ip
+            .parse::<std::net::Ipv4Addr>()
+            .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED)
+    });
+    Ok(result)
+}
+
