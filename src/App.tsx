@@ -394,7 +394,26 @@ type InspectRuleConfig = {
   enabled: boolean
 }
 
-type InspectWorkspaceView = 'workbench' | 'history' | 'rules'
+type InspectPlanFrequency = 'daily' | 'weekly' | 'monthly' | 'interval'
+
+type InspectPlan = {
+  id: string
+  name: string
+  deviceIds: string[]
+  commands: { name: string; command: string }[]
+  concurrency: number
+  frequency: InspectPlanFrequency
+  weekdays: number[]
+  monthDay: number
+  hour: number
+  minute: number
+  intervalHours: number
+  enabled: boolean
+  lastRunAt: string | null
+  nextRunAt: string | null
+}
+
+type InspectWorkspaceView = 'workbench' | 'history' | 'rules' | 'plans'
 
 type DockPanel = 'servers' | 'local' | InspectorTab | null
 
@@ -10506,6 +10525,25 @@ function InspectWorkspace({
   const [inspectLogDir, setInspectLogDir] = useState('')
   const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
   const [inspectView, setInspectView] = useState<InspectWorkspaceView>('workbench')
+  const [inspectPlans, setInspectPlans] = useState<InspectPlan[]>(() => {
+    try {
+      const raw = localStorage.getItem('rain.inspectPlans')
+      if (raw) {
+        const list: unknown = JSON.parse(raw)
+        if (Array.isArray(list)) return list as InspectPlan[]
+      }
+    } catch {
+      /* ignore */
+    }
+    return []
+  })
+  const [inspectPlanEditor, setInspectPlanEditor] = useState<InspectPlan | null>(null)
+  const [inspectPlanRunning, setInspectPlanRunning] = useState<Set<string>>(new Set())
+  const inspectPlanRunningRef = useRef<Set<string>>(new Set())
+  function updatePlanRunning(next: Set<string>) {
+    inspectPlanRunningRef.current = next
+    setInspectPlanRunning(next)
+  }
   const [inspectVendors, setInspectVendors] = useState<string[]>(() => readInspectVendors())
   const [inspectVendorsOpen, setInspectVendorsOpen] = useState(false)
   const [inspectVendorInput, setInspectVendorInput] = useState('')
@@ -10916,6 +10954,229 @@ function InspectWorkspace({
     onNotify(t('厂商已删除'))
   }
 
+  function formatDateTime(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+
+  function planTimeLabel(plan: InspectPlan): string {
+    return `${String(plan.hour).padStart(2, '0')}:${String(plan.minute).padStart(2, '0')}`
+  }
+
+  function planFrequencyLabel(plan: InspectPlan): string {
+    if (plan.frequency === 'daily') return `${t('每天')} ${planTimeLabel(plan)}`
+    if (plan.frequency === 'weekly') {
+      const names = ['日', '一', '二', '三', '四', '五', '六']
+      const days = (plan.weekdays ?? []).length ? (plan.weekdays ?? []).map((w) => t('周') + names[w]).join('、') : '-'
+      return `${t('每周')} ${days} ${planTimeLabel(plan)}`
+    }
+    if (plan.frequency === 'monthly') return `${t('每月')} ${plan.monthDay}${t('号')} ${planTimeLabel(plan)}`
+    return `${t('每')} ${plan.intervalHours} ${t('小时')}`
+  }
+
+  function planNextRun(plan: InspectPlan, from: Date): Date | null {
+    if (plan.frequency === 'interval') {
+      return new Date(from.getTime() + (plan.intervalHours || 1) * 3600 * 1000)
+    }
+    if (plan.frequency === 'daily') {
+      const d = new Date(from)
+      d.setHours(plan.hour, plan.minute, 0, 0)
+      if (d.getTime() <= from.getTime()) d.setDate(d.getDate() + 1)
+      return d
+    }
+    if (plan.frequency === 'weekly') {
+      const days = (plan.weekdays ?? []).filter((w) => w >= 0 && w <= 6)
+      if (!days.length) return null
+      for (let i = 1; i <= 8; i++) {
+        const d = new Date(from)
+        d.setDate(from.getDate() + i)
+        if (days.includes(d.getDay())) {
+          d.setHours(plan.hour, plan.minute, 0, 0)
+          if (d.getTime() > from.getTime()) return d
+        }
+      }
+      return null
+    }
+    // monthly
+    const day = Math.min(Math.max(plan.monthDay || 1, 1), 28)
+    let candidate = new Date(from.getFullYear(), from.getMonth(), day, plan.hour, plan.minute, 0, 0)
+    if (candidate.getTime() <= from.getTime()) {
+      const nextMonth = new Date(from.getFullYear(), from.getMonth() + 1, 1)
+      const maxDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate()
+      candidate = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(day, maxDay), plan.hour, plan.minute, 0, 0)
+    }
+    return candidate
+  }
+
+  function persistInspectPlans(next: InspectPlan[]) {
+    setInspectPlans(next)
+    try {
+      localStorage.setItem('rain.inspectPlans', JSON.stringify(next))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function openPlanEditor(plan?: InspectPlan) {
+    setInspectPlanEditor(
+      plan
+        ? { ...plan }
+        : {
+            id: `plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            name: '',
+            deviceIds: [],
+            commands: [],
+            concurrency: 5,
+            frequency: 'daily',
+            weekdays: [1, 2, 3, 4, 5],
+            monthDay: 1,
+            hour: 0,
+            minute: 0,
+            intervalHours: 24,
+            enabled: true,
+            lastRunAt: null,
+            nextRunAt: null,
+          },
+    )
+  }
+
+  function togglePlanDevice(id: string) {
+    setInspectPlanEditor((prev) =>
+      prev ? { ...prev, deviceIds: prev.deviceIds.includes(id) ? prev.deviceIds.filter((x) => x !== id) : [...prev.deviceIds, id] } : prev,
+    )
+  }
+
+  function togglePlanWeekday(day: number) {
+    setInspectPlanEditor((prev) =>
+      prev
+        ? { ...prev, weekdays: prev.weekdays.includes(day) ? prev.weekdays.filter((x) => x !== day) : [...prev.weekdays, day].sort() }
+        : prev,
+    )
+  }
+
+  function setPlanCommandsText(value: string) {
+    setInspectPlanEditor((prev) =>
+      prev
+        ? {
+            ...prev,
+            commands: value
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((cmd) => ({ name: cmd.slice(0, 30), command: cmd })),
+          }
+        : prev,
+    )
+  }
+
+  function savePlanDraft() {
+    if (!inspectPlanEditor) return
+    if (!inspectPlanEditor.name.trim()) {
+      onNotify(t('请输入计划名称'))
+      return
+    }
+    if (inspectPlanEditor.deviceIds.length === 0) {
+      onNotify(t('请至少选择一台设备'))
+      return
+    }
+    const commands = inspectPlanEditor.commands.map((c) => ({ name: c.name, command: c.command.trim() })).filter((c) => c.command.length > 0)
+    if (commands.length === 0) {
+      onNotify(t('请至少输入一条命令'))
+      return
+    }
+    const exists = inspectPlans.some((p) => p.id === inspectPlanEditor.id)
+    const now = new Date()
+    const next = planNextRun({ ...inspectPlanEditor, commands }, now)
+    const draft: InspectPlan = {
+      ...inspectPlanEditor,
+      commands,
+      nextRunAt: next ? formatDateTime(next) : null,
+      lastRunAt: exists ? inspectPlanEditor.lastRunAt : null,
+    }
+    const nextPlans = exists ? inspectPlans.map((p) => (p.id === draft.id ? draft : p)) : [...inspectPlans, draft]
+    persistInspectPlans(nextPlans)
+    setInspectPlanEditor(null)
+    onNotify(t('计划已保存，到点将自动执行'))
+  }
+
+  function deletePlan(plan: InspectPlan) {
+    if (!window.confirm(t('确定删除计划') + `「${plan.name}」吗？`)) return
+    persistInspectPlans(inspectPlans.filter((p) => p.id !== plan.id))
+    if (inspectPlanEditor?.id === plan.id) setInspectPlanEditor(null)
+    onNotify(t('计划已删除'))
+  }
+
+  function togglePlanEnabled(plan: InspectPlan) {
+    const enabled = !plan.enabled
+    const next: InspectPlan = { ...plan, enabled }
+    if (enabled) {
+      const nextTime = planNextRun(next, new Date())
+      next.nextRunAt = nextTime ? formatDateTime(nextTime) : null
+    }
+    persistInspectPlans(inspectPlans.map((p) => (p.id === plan.id ? next : p)))
+    onNotify(enabled ? t('计划已启用') : t('计划已停用'))
+  }
+
+  async function executePlanNow(plan: InspectPlan) {
+    const devices = inspectDevices.filter((d) => plan.deviceIds.includes(d.id))
+    const commands = plan.commands.map((c) => ({ name: c.name, command: c.command.trim() })).filter((c) => c.command.length > 0)
+    if (devices.length === 0 || commands.length === 0) {
+      onNotify(`${t('计划')}「${plan.name}」${t('没有可用设备或命令，请先编辑计划')}`)
+      return
+    }
+    if (inspectPlanRunningRef.current.has(plan.id)) return
+    updatePlanRunning(new Set(inspectPlanRunningRef.current).add(plan.id))
+    try {
+      const safeConcurrency = Math.min(200, Math.max(1, Math.floor(plan.concurrency) || 1))
+      const results = await invoke<InspectExecResult[]>('batch_execute_inspect', {
+        devices: devices.map((d) => ({
+          name: d.name,
+          host: d.host,
+          port: d.port,
+          username: d.username,
+          password: d.password,
+          vendor: d.vendor,
+        })),
+        commands,
+        concurrency: safeConcurrency,
+      })
+      if (!discardInspectResultRef.current) {
+        setInspectResults(results)
+        void invoke('save_inspect_history', { results }).catch(() => undefined)
+        const ok = results.filter((r) => r.success).length
+        onNotify(`${t('计划')}「${plan.name}」${t('执行完成：')}${ok}/${results.length}${t('台设备成功')}`)
+      }
+      const now = new Date()
+      const next = planNextRun(plan, now)
+      const updated = inspectPlans.map((p) =>
+        p.id === plan.id ? { ...p, lastRunAt: formatDateTime(now), nextRunAt: next ? formatDateTime(next) : null } : p,
+      )
+      persistInspectPlans(updated)
+    } catch (reason) {
+      if (!discardInspectResultRef.current) {
+        onNotify(`${t('计划')}「${plan.name}」${t('执行失败：')}${String(reason).replace(/^Error:\s*/i, '')}`)
+      }
+    } finally {
+      const nextSet = new Set(inspectPlanRunningRef.current)
+      nextSet.delete(plan.id)
+      updatePlanRunning(nextSet)
+    }
+  }
+
+  // 定时器：每 10 秒检查是否有到点的启用计划
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      for (const plan of inspectPlans) {
+        if (!plan.enabled || inspectPlanRunningRef.current.has(plan.id)) continue
+        if (plan.nextRunAt && new Date(plan.nextRunAt).getTime() <= now) {
+          void executePlanNow(plan)
+        }
+      }
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  }, [inspectPlans, inspectDevices])
+
   async function loadInspectHistory() {
     try {
       const list = await invoke<InspectHistoryMeta[]>('list_inspect_history')
@@ -11138,6 +11399,9 @@ function InspectWorkspace({
         </button>
         <button type="button" className={`inspect-tab${inspectView === 'rules' ? ' active' : ''}`} onClick={() => { setInspectView('rules'); void loadInspectRules() }}>
           {t('故障规则')}
+        </button>
+        <button type="button" className={`inspect-tab${inspectView === 'plans' ? ' active' : ''}`} onClick={() => setInspectView('plans')}>
+          {t('巡检计划')}
         </button>
       </div>
       {inspectView === 'workbench' && (
@@ -11805,6 +12069,164 @@ function InspectWorkspace({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {inspectView === 'plans' && (
+        <div className="inspect-plans-pane">
+          <div className="inspect-rules-header">
+            <div className="inspect-rules-header-text">
+              <strong>{t('巡检计划')}</strong>
+              <span>{t('设置定时自动巡检，到点自动执行并保存到巡检历史')}</span>
+            </div>
+            <div className="inspect-workspace-actions">
+              <button className="utility-primary-button compact" type="button" onClick={() => openPlanEditor()}>
+                <Plus size={13} />
+                {t('新建计划')}
+              </button>
+            </div>
+          </div>
+
+          {inspectPlanEditor && (
+            <div className="inspect-plan-editor">
+              <div className="inspect-rule-editor-title">
+                <strong>{inspectPlans.some((p) => p.id === inspectPlanEditor.id) ? t('编辑计划') : t('新建计划')}</strong>
+                <button className="utility-text-button compact" type="button" onClick={() => setInspectPlanEditor(null)}>
+                  <X size={13} />
+                  {t('关闭')}
+                </button>
+              </div>
+              <div className="inspect-plan-form">
+                <label>
+                  <span>{t('计划名称')}</span>
+                  <input value={inspectPlanEditor.name} onChange={(event) => setInspectPlanEditor({ ...inspectPlanEditor, name: event.target.value })} placeholder={t('如：机房核心设备日检')} />
+                </label>
+                <label>
+                  <span>{t('执行频率')}</span>
+                  <select value={inspectPlanEditor.frequency} onChange={(event) => setInspectPlanEditor({ ...inspectPlanEditor, frequency: event.target.value as InspectPlanFrequency })}>
+                    <option value="daily">{t('每天')}</option>
+                    <option value="weekly">{t('每周')}</option>
+                    <option value="monthly">{t('每月')}</option>
+                    <option value="interval">{t('每 N 小时')}</option>
+                  </select>
+                </label>
+                {inspectPlanEditor.frequency === 'weekly' && (
+                  <label className="inspect-plan-check-group">
+                    <span>{t('选择星期')}</span>
+                    <div>
+                      {[
+                        ['0', t('日')],
+                        ['1', t('一')],
+                        ['2', t('二')],
+                        ['3', t('三')],
+                        ['4', t('四')],
+                        ['5', t('五')],
+                        ['6', t('六')],
+                      ].map(([value, label]) => (
+                        <label key={value}>
+                          <input type="checkbox" checked={inspectPlanEditor.weekdays.includes(Number(value))} onChange={() => togglePlanWeekday(Number(value))} />
+                          {t('周')}{label}
+                        </label>
+                      ))}
+                    </div>
+                  </label>
+                )}
+                {inspectPlanEditor.frequency === 'monthly' && (
+                  <label>
+                    <span>{t('每月第几天')}</span>
+                    <input type="number" min={1} max={31} value={inspectPlanEditor.monthDay} onChange={(event) => setInspectPlanEditor({ ...inspectPlanEditor, monthDay: Number(event.target.value) || 1 })} />
+                  </label>
+                )}
+                {inspectPlanEditor.frequency === 'interval' && (
+                  <label>
+                    <span>{t('间隔（小时）')}</span>
+                    <input type="number" min={1} max={720} value={inspectPlanEditor.intervalHours} onChange={(event) => setInspectPlanEditor({ ...inspectPlanEditor, intervalHours: Number(event.target.value) || 1 })} />
+                  </label>
+                )}
+                {inspectPlanEditor.frequency !== 'interval' && (
+                  <label>
+                    <span>{t('执行时间')}</span>
+                    <input
+                      type="time"
+                      value={`${String(inspectPlanEditor.hour).padStart(2, '0')}:${String(inspectPlanEditor.minute).padStart(2, '0')}`}
+                      onChange={(event) => {
+                        const [hour, minute] = event.target.value.split(':').map(Number)
+                        setInspectPlanEditor({ ...inspectPlanEditor, hour: hour || 0, minute: minute || 0 })
+                      }}
+                    />
+                  </label>
+                )}
+                <label>
+                  <span>{t('并发数')}</span>
+                  <input type="number" min={1} max={200} value={inspectPlanEditor.concurrency} onChange={(event) => setInspectPlanEditor({ ...inspectPlanEditor, concurrency: Number(event.target.value) || 1 })} />
+                </label>
+                <label className="inspect-plan-check-group inspect-plan-devices">
+                  <span>{t('选择设备')}</span>
+                  {inspectDevices.length === 0 ? (
+                    <div className="inspect-plan-hint">{t('暂无设备，请先在巡检工作台添加设备')}</div>
+                  ) : (
+                    <div>
+                      {inspectDevices.map((d) => (
+                        <label key={d.id}>
+                          <input type="checkbox" checked={inspectPlanEditor.deviceIds.includes(d.id)} onChange={() => togglePlanDevice(d.id)} />
+                          {d.name}（{d.host}）
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </label>
+                <label className="inspect-plan-commands">
+                  <span>{t('执行命令（每行一条）')}</span>
+                  <textarea
+                    rows={6}
+                    value={inspectPlanEditor.commands.map((c) => c.command).join('\n')}
+                    onChange={(event) => setPlanCommandsText(event.target.value)}
+                    placeholder={t('每行一条命令，如：\ndisplay version\ndisplay device')}
+                  />
+                  <span className="inspect-plan-hint">{t('多行命令将按顺序在每台设备上依次执行')}</span>
+                </label>
+              </div>
+              <div className="inspect-rule-editor-actions">
+                <button className="utility-primary-button compact" type="button" onClick={savePlanDraft}>
+                  <Save size={13} />
+                  {t('保存计划')}
+                </button>
+                <button className="utility-text-button compact" type="button" onClick={() => setInspectPlanEditor(null)}>{t('取消')}</button>
+              </div>
+            </div>
+          )}
+
+          {inspectPlans.length === 0 && !inspectPlanEditor ? (
+            <div className="inspect-empty">{t('暂无巡检计划，点击"新建计划"创建定时自动巡检')}</div>
+          ) : (
+            <div className="inspect-plans-list">
+              {inspectPlans.map((plan) => (
+                <div className="inspect-plan-card" key={plan.id}>
+                  <div className="inspect-plan-card-head">
+                    <strong>{plan.name}</strong>
+                    <span className="inspect-plan-frequency">{planFrequencyLabel(plan)}</span>
+                    {inspectPlanRunning.has(plan.id) && <span className="inspect-plan-running">{t('执行中…')}</span>}
+                    <label className="inspect-plan-switch">
+                      <input type="checkbox" checked={plan.enabled} onChange={() => togglePlanEnabled(plan)} />
+                      {t('启用')}
+                    </label>
+                    <button className="utility-primary-button compact" type="button" disabled={inspectPlanRunning.has(plan.id)} onClick={() => void executePlanNow(plan)}>
+                      {t('立即执行')}
+                    </button>
+                    <button className="utility-text-button compact" type="button" onClick={() => openPlanEditor(plan)}>{t('编辑')}</button>
+                    <button className="utility-text-button danger compact" type="button" onClick={() => deletePlan(plan)}>{t('删除')}</button>
+                  </div>
+                  <div className="inspect-plan-card-meta">
+                    <span>{t('设备')} {plan.deviceIds.length}</span>
+                    <span>{t('命令')} {plan.commands.length}</span>
+                    <span>{t('并发')} {plan.concurrency}</span>
+                    <span>{t('上次执行')} {plan.lastRunAt ?? '-'}</span>
+                    <span>{t('下次执行')} {plan.nextRunAt ?? '-'}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
