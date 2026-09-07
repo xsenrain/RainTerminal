@@ -2509,7 +2509,7 @@ function App() {
         local: '本地工具',
         run: '运行命令',
         snippets: '常用命令',
-        inspect: '自动化巡检',
+        inspect: '自动化',
         history: '执行记录',
         notes: '待办笔记',
       } satisfies Record<Exclude<DockPanel, null>, string>)[activePanel])
@@ -3411,7 +3411,7 @@ function DockRail({
   const activityItems: Array<{ panel: Exclude<DockPanel, null>; label: string; icon: ReactNode }> = [
     { panel: 'run', label: '运行命令', icon: <Terminal size={18} /> },
     { panel: 'snippets', label: '常用命令', icon: <Star size={18} /> },
-    { panel: 'inspect', label: '自动化巡检', icon: <Activity size={18} /> },
+    { panel: 'inspect', label: '自动化', icon: <Activity size={18} /> },
     { panel: 'history', label: '执行记录', icon: <Clock3 size={18} /> },
     { panel: 'notes', label: '待办笔记', icon: <ClipboardList size={18} /> },
   ]
@@ -10681,7 +10681,7 @@ function InspectWorkspace({
       <header className="inspect-workspace-header">
         <div className="inspect-workspace-title">
           <Activity size={16} />
-          <strong>{t('自动化巡检')}</strong>
+          <strong>{t('自动化')}</strong>
           <span>{t('管理巡检设备，批量执行命令并自动判断故障。')}</span>
         </div>
         <div className="inspect-workspace-actions">

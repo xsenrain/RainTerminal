@@ -98,6 +98,7 @@ const englishUi: Record<string, string> = {
   '当前内置引擎仅支持 RDP': 'The built-in engine currently supports RDP only',
   'VNC 内置引擎尚未接入': 'The built-in VNC engine is not available yet',
   'VNC 尚未接入内置引擎，请改用 RDP': 'VNC is not available in the built-in engine yet. Use RDP instead.',
+  '自动化': 'Automation',
   '自动化巡检': 'Automated inspection',
   '管理巡检设备，后续可批量执行命令。': 'Manage devices for inspection. Batch command execution is coming next.',
   '添加设备': 'Add device',
