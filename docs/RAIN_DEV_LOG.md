@@ -288,3 +288,9 @@
 - 默认日志路径改为**软件运行目录**（exe 所在目录，不再用 %LOCALAPPDATA% 下的 logs/inspect）
 - 移除设置页相关配置块与 onNotify prop
 - 验证：cargo check（无警告）+ npm run build 通过
+
+### 2026-09-07 · 修复两个问题（按用户反馈）
+1. **执行连接失败/超时导致主界面卡住**：batch_execute_inspect 原为同步 command，SSH 阻塞直接占用 IPC 线程，设备超时期间 UI 交互排队卡死。改为 async command + spawn_blocking，阻塞工作移入独立线程池，执行期间界面可正常操作。
+2. **保存日志目录报"系统找不到指定的路径 (os error 3)"**：set_inspect_log_dir 写 inspect_config.json 前未创建 app_data_dir 父目录，首次保存必失败。已补 create_dir_all(config 父目录)。
+3. 顺带优化：连接失败（TCP 超时/握手失败）不再盲目重试一次，单设备最多等一轮超时（约 10s，原来 20s）。
+- 验证：cargo check（无警告）+ npm run build 通过

@@ -84,80 +84,87 @@ struct InspectProgress {
 /// - 每完成一台设备推送 `inspect-progress` 事件
 /// - 单设备失败自动重试一次
 #[tauri::command]
-pub fn batch_execute_inspect(
+pub async fn batch_execute_inspect(
     app: AppHandle,
     devices: Vec<InspectDeviceInput>,
     commands: Vec<InspectCommandInput>,
     concurrency: u32,
-) -> Vec<InspectExecResult> {
+) -> Result<Vec<InspectExecResult>, String> {
     let total = devices.len();
     if total == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let log_dir = resolve_inspect_log_dir(&app);
     let _ = fs::create_dir_all(&log_dir);
     let workers = (concurrency.clamp(1, 200) as usize).min(total);
-    let results: Mutex<Vec<Option<InspectExecResult>>> = Mutex::new(vec![None; total]);
-    let next_index = AtomicUsize::new(0);
-    let done_count = AtomicUsize::new(0);
-    let worker_apps: Vec<AppHandle> = (0..workers).map(|_| app.clone()).collect();
-    let worker_log_dirs: Vec<PathBuf> = (0..workers).map(|_| log_dir.clone()).collect();
 
-    thread::scope(|scope| {
-        for (worker_app, worker_log_dir) in worker_apps.iter().zip(worker_log_dirs.iter()) {
-            scope.spawn(|| loop {
-                let index = next_index.fetch_add(1, Ordering::SeqCst);
-                if index >= total {
-                    break;
-                }
-                let device = &devices[index];
-                let started = Instant::now();
-                let (result, log_path) = execute_device_with_retry(device, &commands, worker_log_dir);
-                let result = match result {
-                    Ok(outputs) => {
-                        let health = aggregate_health(&outputs);
-                        InspectExecResult {
+    // 将阻塞的 SSH 连接/执行工作移出 IPC 线程，避免设备连接超时期间阻塞主界面交互。
+    tauri::async_runtime::spawn_blocking(move || {
+        let results: Mutex<Vec<Option<InspectExecResult>>> = Mutex::new(vec![None; total]);
+        let next_index = AtomicUsize::new(0);
+        let done_count = AtomicUsize::new(0);
+        let worker_apps: Vec<AppHandle> = (0..workers).map(|_| app.clone()).collect();
+        let worker_log_dirs: Vec<PathBuf> = (0..workers).map(|_| log_dir.clone()).collect();
+
+        thread::scope(|scope| {
+            for (worker_app, worker_log_dir) in worker_apps.iter().zip(worker_log_dirs.iter()) {
+                scope.spawn(|| loop {
+                    let index = next_index.fetch_add(1, Ordering::SeqCst);
+                    if index >= total {
+                        break;
+                    }
+                    let device = &devices[index];
+                    let started = Instant::now();
+                    let (result, log_path) =
+                        execute_device_with_retry(device, &commands, worker_log_dir);
+                    let result = match result {
+                        Ok(outputs) => {
+                            let health = aggregate_health(&outputs);
+                            InspectExecResult {
+                                device_name: device.name.clone(),
+                                host: device.host.clone(),
+                                success: true,
+                                error: None,
+                                outputs,
+                                duration_ms: started.elapsed().as_millis() as u64,
+                                health,
+                                log_path,
+                            }
+                        }
+                        Err(error) => InspectExecResult {
                             device_name: device.name.clone(),
                             host: device.host.clone(),
-                            success: true,
-                            error: None,
-                            outputs,
+                            success: false,
+                            error: Some(error),
+                            outputs: Vec::new(),
                             duration_ms: started.elapsed().as_millis() as u64,
-                            health,
+                            health: "critical".to_string(),
                             log_path,
-                        }
-                    }
-                    Err(error) => InspectExecResult {
-                        device_name: device.name.clone(),
-                        host: device.host.clone(),
-                        success: false,
-                        error: Some(error),
-                        outputs: Vec::new(),
-                        duration_ms: started.elapsed().as_millis() as u64,
-                        health: "critical".to_string(),
-                        log_path,
-                    },
-                };
-                results.lock().unwrap()[index] = Some(result);
-                let done = done_count.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = worker_app.emit(
-                    "inspect-progress",
-                    InspectProgress {
-                        current: done,
-                        total,
-                        device_name: device.name.clone(),
-                    },
-                );
-            });
-        }
-    });
+                        },
+                    };
+                    results.lock().unwrap()[index] = Some(result);
+                    let done = done_count.fetch_add(1, Ordering::SeqCst) + 1;
+                    let _ = worker_app.emit(
+                        "inspect-progress",
+                        InspectProgress {
+                            current: done,
+                            total,
+                            device_name: device.name.clone(),
+                        },
+                    );
+                });
+            }
+        });
 
-    results
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|result| result.unwrap())
-        .collect()
+        results
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|result| result.unwrap())
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("巡检执行线程调度失败: {error}"))
 }
 
 /// 连接失败时自动重试一次（网络抖动 / 首连慢的常见场景），两次共用同一日志文件。
@@ -179,11 +186,20 @@ fn execute_device_with_retry(
     log.push("----------------------------------------------------------------".to_string());
 
     let first = execute_device(device, commands, &mut log);
-    if first.is_err() {
+    // 连接阶段失败（TCP 超时/握手失败/解析失败）说明目标当前不可达，重试只会再等一轮超时，
+    // 因此仅在“已连接但执行失败”（会话抖动/命令异常）时重试一次。
+    let is_connect_failure = matches!(
+        &first,
+        Err(error)
+            if error.contains("TCP connect failed")
+                || error.contains("SSH handshake failed")
+                || error.contains("resolve SSH host")
+    );
+    if first.is_err() && !is_connect_failure {
         log.push(format!("[{}] 首次执行失败，自动重试一次", now_time()));
         log.push("----------------------------------------------------------------".to_string());
     }
-    let result = if first.is_err() {
+    let result = if first.is_err() && !is_connect_failure {
         execute_device(device, commands, &mut log)
     } else {
         first
@@ -667,11 +683,12 @@ pub fn set_inspect_log_dir(app: AppHandle, path: String) -> Result<String, Strin
     let dir = PathBuf::from(&trimmed);
     fs::create_dir_all(&dir).map_err(|error| format!("无法创建日志目录: {error}"))?;
     let config = serde_json::json!({ "log_dir": dir.display().to_string() });
-    fs::write(
-        inspect_config_path(&app),
-        serde_json::to_string_pretty(&config).unwrap_or_default(),
-    )
-    .map_err(|error| format!("保存日志配置失败: {error}"))?;
+    let config_path = inspect_config_path(&app);
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("创建配置目录失败: {error}"))?;
+    }
+    fs::write(config_path, serde_json::to_string_pretty(&config).unwrap_or_default())
+        .map_err(|error| format!("保存日志配置失败: {error}"))?;
     Ok(dir.display().to_string())
 }
 
