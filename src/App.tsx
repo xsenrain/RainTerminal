@@ -10642,13 +10642,13 @@ function InspectWorkspace({
     }
   }
 
-  async function importInspectDevicesCsv() {
+  async function importInspectTableCsv() {
     try {
       const text = await invoke<string | null>('open_text_import', { filter: 'csv' })
       if (!text) return
       const rows = parseCsvRows(text.replace(/^\uFEFF/, ''))
       if (rows.length === 0) {
-        onNotify(t('CSV 文件为空'))
+        onNotify(t('表格文件为空'))
         return
       }
       const header = rows[0].map((cell) => cell.trim().toLowerCase())
@@ -10659,14 +10659,24 @@ function InspectWorkspace({
       const passwordIndex = header.indexOf('password')
       const vendorIndex = header.indexOf('vendor')
       const remarkIndex = header.indexOf('remark')
+      const commandsIndex = header.indexOf('commands')
       if (hostIndex < 0) {
-        onNotify(t('CSV 缺少 host 列'))
+        onNotify(t('表格缺少 host 列（请先下载模板参考列名）'))
         return
       }
+
+      // 设备（按 host 去重）
+      const existingHosts = new Set(inspectDevices.map((d) => d.host))
       let added = 0
+      let skipped = 0
       for (const row of rows.slice(1)) {
         const host = (row[hostIndex] ?? '').trim()
         if (!host) continue
+        if (existingHosts.has(host)) {
+          skipped += 1
+          continue
+        }
+        existingHosts.add(host)
         const vendor = vendorIndex >= 0 ? (row[vendorIndex] ?? '').trim().toLowerCase() : 'linux'
         onAddInspectDevice({
           name: (nameIndex >= 0 ? row[nameIndex] ?? '' : '').trim() || host,
@@ -10679,119 +10689,55 @@ function InspectWorkspace({
         })
         added += 1
       }
-      onNotify(`${t('CSV 导入成功')}：${added} 台`)
-    } catch (reason) {
-      onNotify(`CSV 导入失败：${String(reason).replace(/^Error:\s*/i, '')}`)
-    }
-  }
 
-  async function importInspectTaskJson() {
-    try {
-      const text = await invoke<string | null>('open_text_import', { filter: 'json' })
-      if (!text) return
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(text.replace(/^\uFEFF/, ''))
-      } catch {
-        onNotify(t('批量导入失败：JSON 格式错误'))
-        return
-      }
-      const task = parsed as {
-        devices?: {
-          name?: string
-          host?: string
-          port?: number
-          username?: string
-          password?: string
-          vendor?: string
-          remark?: string
-        }[]
-        commands?: { name?: string; command?: string }[]
-        concurrency?: number
-        logDir?: string
-      }
-      if (typeof task !== 'object' || task === null || Array.isArray(task)) {
-        onNotify(t('批量导入失败：文件结构不正确'))
-        return
-      }
-
-      // 1. 并发（可选）
-      let concurrencyApplied = false
-      if (typeof task.concurrency === 'number' && Number.isFinite(task.concurrency)) {
-        const clamped = Math.min(200, Math.max(1, Math.floor(task.concurrency) || 1))
-        setInspectConcurrency(clamped)
-        concurrencyApplied = true
-      }
-
-      // 2. 日志路径（可选，目录无效不中断其余导入）
-      let logDirApplied = false
-      if (typeof task.logDir === 'string' && task.logDir.trim()) {
-        try {
-          const saved = await invoke<string>('set_inspect_log_dir', { path: task.logDir.trim() })
-          setInspectLogDir(saved)
-          logDirApplied = true
-        } catch {
-          // 目录不存在或无效，继续导入
-        }
-      }
-
-      // 3. 设备（按 host 去重）
-      const existingHosts = new Set(inspectDevices.map((d) => d.host))
-      let added = 0
-      let skipped = 0
-      for (const item of task.devices ?? []) {
-        const host = (item?.host ?? '').trim()
-        if (!host) continue
-        if (existingHosts.has(host)) {
-          skipped += 1
-          continue
-        }
-        existingHosts.add(host)
-        const vendor = (item.vendor ?? '').trim().toLowerCase()
-        onAddInspectDevice({
-          name: (item.name ?? '').trim() || host,
-          host,
-          port: Number(item.port) || 22,
-          username: (item.username ?? '').trim(),
-          password: (item.password ?? '').trim(),
-          vendor: (INSPECT_VENDORS as readonly string[]).includes(vendor) ? vendor : 'linux',
-          remark: (item.remark ?? '').trim(),
-        })
-        added += 1
-      }
-
-      // 4. 命令（替换当前命令列表）
+      // 命令（替换当前命令列表；commands 列内多条命令用 | 或换行分隔）
       let commandCount = 0
       const importedCommands: { id: string; name: string; command: string }[] = []
-      for (const item of task.commands ?? []) {
-        const command = (item?.command ?? '').trim()
-        if (!command) continue
-        importedCommands.push({
-          id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-          name: (item.name ?? '').trim() || t('自定义命令'),
-          command,
-        })
-        commandCount += 1
-      }
-      if (importedCommands.length > 0) {
-        setInspectCommands(importedCommands)
-      } else if ((task.commands ?? []).length > 0) {
-        onNotify(t('导入的命令均为空，已跳过'))
+      if (commandsIndex >= 0) {
+        for (const row of rows.slice(1)) {
+          const raw = (row[commandsIndex] ?? '').replace(/\r\n/g, '\n')
+          if (!raw.trim()) continue
+          const pieces = raw
+            .split('\n')
+            .flatMap((line) => line.split('|'))
+            .map((piece) => piece.trim())
+            .filter((piece) => piece.length > 0)
+          for (const command of pieces) {
+            importedCommands.push({
+              id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+              name: command.length > 48 ? `${command.slice(0, 48)}…` : command,
+              command,
+            })
+            commandCount += 1
+          }
+        }
+        if (importedCommands.length > 0) {
+          setInspectCommands(importedCommands)
+        }
       }
 
-      const parts: string[] = [`${t('批量导入成功')}：${added} 台设备、${commandCount} 条命令`]
+      const parts: string[] = [`${t('表格导入成功')}：${added} 台设备、${commandCount} 条命令`]
       if (skipped > 0) parts.push(`${t('跳过已存在设备')} ${skipped} 台`)
-      if (concurrencyApplied) parts.push(t('已设置并发'))
-      if (logDirApplied) {
-        parts.push(t('已设置日志路径'))
-      } else if (typeof task.logDir === 'string' && task.logDir.trim()) {
-        parts.push(t('日志路径无效，未应用'))
-      }
       onNotify(parts.join('，'))
     } catch (reason) {
-      onNotify(`批量导入失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+      onNotify(`表格导入失败：${String(reason).replace(/^Error:\s*/i, '')}`)
     }
   }
+
+  async function downloadInspectTemplate() {
+    const header = ['name', 'host', 'port', 'username', 'password', 'vendor', 'remark', 'commands'].join(',')
+    const example = ['核心交换机', '10.1.1.1', '22', 'admin', 'password', 'huawei', '机房A', 'display version | display device'].map(escapeCsvCell).join(',')
+    try {
+      await invoke('save_text_export', {
+        suggestedName: '巡检导入模板.csv',
+        content: `\uFEFF${[header, example].join('\r\n')}`,
+        filter: 'csv',
+      })
+    } catch (reason) {
+      onNotify(`模板下载失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
 
   function parseCsvRows(text: string): string[][] {
     const rows: string[][] = []
@@ -10844,13 +10790,23 @@ function InspectWorkspace({
           <span>{t('管理巡检设备，批量执行命令并自动判断故障。')}</span>
         </div>
         <div className="inspect-workspace-actions">
-          <button className="utility-text-button" type="button" onClick={() => void importInspectTaskJson()}>
-            <Upload size={13} />
-            {t('批量导入')}
+          <button
+            className="utility-text-button"
+            type="button"
+            onClick={() => void downloadInspectTemplate()}
+            title={t('下载带示例的 CSV 模板，用 Excel 打开填写后导入')}
+          >
+            <Download size={13} />
+            {t('下载模板')}
           </button>
-          <button className="utility-text-button" type="button" onClick={() => void importInspectDevicesCsv()}>
+          <button
+            className="utility-text-button"
+            type="button"
+            onClick={() => void importInspectTableCsv()}
+            title={t('CSV 表格：name,host,port,username,password,vendor,remark,commands（多条命令用 | 分隔）')}
+          >
             <Upload size={13} />
-            {t('从 CSV 导入设备')}
+            {t('表格导入')}
           </button>
           <button className="utility-primary-button compact" type="button" onClick={() => openInspectEditor()}>
             <Plus size={13} />

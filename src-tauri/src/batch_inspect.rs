@@ -310,7 +310,7 @@ fn now_time() -> String {
     Local::now().format("%H:%M:%S").to_string()
 }
 
-/// 日志文件名：inspect_IP_设备名_YYYYMMDD_HHMMSS.log（IP 与设备名清洗非法字符）。
+/// 日志文件名：IP_设备名_YYYYMMDD_HHMMSS.log（IP 与设备名清洗非法字符）。
 fn inspect_log_file_path(log_dir: &Path, device: &InspectDeviceInput) -> PathBuf {
     let safe_host: String = device
         .host
@@ -345,7 +345,7 @@ fn inspect_log_file_path(log_dir: &Path, device: &InspectDeviceInput) -> PathBuf
         safe_name
     };
     log_dir.join(format!(
-        "inspect_{}_{}_{}.log",
+        "{}_{}_{}.log",
         safe_host,
         safe_name,
         Local::now().format("%Y%m%d_%H%M%S")
