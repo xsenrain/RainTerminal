@@ -250,6 +250,7 @@ type InspectDevice = {
   password: string
   vendor: string
   remark: string
+  encryptedPassword?: string
 }
 
 const DEFAULT_INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other']
@@ -1118,6 +1119,37 @@ function App() {
   const [snippetCategories, setSnippetCategories] = usePersistentSnippetCategories()
   const [sessionNotes, setSessionNotes] = usePersistentSessionNotes()
   const [inspectDevices, setInspectDevices] = usePersistentInspectDevices()
+  const inspectCredentialMigratedRef = useRef(false)
+  useEffect(() => {
+    if (inspectCredentialMigratedRef.current) return
+    const needMigration = inspectDevices.some((d) => Boolean(d.password) && !d.encryptedPassword)
+    if (!needMigration) {
+      inspectCredentialMigratedRef.current = true
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const next = await Promise.all(
+        inspectDevices.map(async (d) => {
+          if (d.password && !d.encryptedPassword) {
+            try {
+              const encryptedPassword = await invoke<string>('encrypt_secret', { plain: d.password })
+              return { ...d, password: '', encryptedPassword }
+            } catch {
+              return d
+            }
+          }
+          return d
+        }),
+      )
+      if (cancelled) return
+      inspectCredentialMigratedRef.current = true
+      setInspectDevices(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [inspectDevices, setInspectDevices])
   const [remoteAuxConcurrency, setRemoteAuxConcurrency] = usePersistentRemoteAuxConcurrency()
   const [appearance, setAppearance] = usePersistentAppAppearance()
   const [themePreset, setThemePreset] = usePersistentThemePreset()
@@ -9477,17 +9509,26 @@ function Inspector({
     setNewCategoryName('')
   }
 
-  function openInspectEditor(device?: InspectDevice) {
+  async function openInspectEditor(device?: InspectDevice) {
     if (device) {
       setInspectEditingId(device.id)
+      let password = device.password
+      if (device.encryptedPassword) {
+        try {
+          password = await invoke<string>('decrypt_secret', { cipher: device.encryptedPassword })
+        } catch {
+          password = ''
+        }
+      }
       setInspectDraft({
         name: device.name,
         host: device.host,
         port: device.port,
         username: device.username,
-        password: device.password,
+        password,
         vendor: device.vendor,
         remark: device.remark,
+        encryptedPassword: device.encryptedPassword ?? '',
       })
     } else {
       setInspectEditingId(null)
@@ -9499,25 +9540,36 @@ function Inspector({
         password: '',
         vendor: 'linux',
         remark: '',
+        encryptedPassword: '',
       })
     }
     setInspectEditorOpen(true)
   }
 
-  function saveInspectDevice() {
+  async function saveInspectDevice() {
     if (!inspectDraft.name.trim() || !inspectDraft.host.trim()) return
+    let encryptedPassword = inspectDraft.encryptedPassword ?? ''
+    if (inspectDraft.password) {
+      try {
+        encryptedPassword = await invoke<string>('encrypt_secret', { plain: inspectDraft.password })
+      } catch {
+        return
+      }
+    }
+    const base = {
+      name: inspectDraft.name.trim(),
+      host: inspectDraft.host.trim(),
+      port: Number(inspectDraft.port) || 22,
+      username: inspectDraft.username,
+      password: '',
+      vendor: inspectDraft.vendor,
+      remark: inspectDraft.remark,
+      encryptedPassword,
+    }
     if (inspectEditingId) {
-      onUpdateInspectDevice(inspectEditingId, {
-        ...inspectDraft,
-        name: inspectDraft.name.trim(),
-        host: inspectDraft.host.trim(),
-      })
+      onUpdateInspectDevice(inspectEditingId, base)
     } else {
-      onAddInspectDevice({
-        ...inspectDraft,
-        name: inspectDraft.name.trim(),
-        host: inspectDraft.host.trim(),
-      })
+      onAddInspectDevice(base)
     }
     setInspectEditorOpen(false)
   }
@@ -9529,7 +9581,7 @@ function Inspector({
   }
 
   async function runInspectBatch() {
-    const selectedDevices = inspectDevices.filter((d) => selectedInspectIds.has(d.id))
+    const selectedDevices = await resolveInspectPasswords(inspectDevices.filter((d) => selectedInspectIds.has(d.id)))
     const commandList = inspectCommands
       .map((item) => ({ name: item.name, command: item.command.trim() }))
       .filter((item) => item.command.length > 0)
@@ -10538,6 +10590,7 @@ function InspectWorkspace({
     return []
   })
   const [inspectPlanEditor, setInspectPlanEditor] = useState<InspectPlan | null>(null)
+  const [inspectPlanCmdDraft, setInspectPlanCmdDraft] = useState('')
   const [inspectPlanRunning, setInspectPlanRunning] = useState<Set<string>>(new Set())
   const inspectPlanRunningRef = useRef<Set<string>>(new Set())
   function updatePlanRunning(next: Set<string>) {
@@ -10591,38 +10644,60 @@ function InspectWorkspace({
     }
   }
 
-  function openInspectEditor(device?: InspectDevice) {
+  async function openInspectEditor(device?: InspectDevice) {
     if (device) {
       setInspectEditingId(device.id)
+      let password = device.password
+      if (device.encryptedPassword) {
+        try {
+          password = await invoke<string>('decrypt_secret', { cipher: device.encryptedPassword })
+        } catch {
+          password = ''
+        }
+      }
       setInspectDraft({
         name: device.name,
         host: device.host,
         port: device.port,
         username: device.username,
-        password: device.password,
+        password,
         vendor: device.vendor,
         remark: device.remark,
+        encryptedPassword: device.encryptedPassword ?? '',
       })
     } else {
       setInspectEditingId(null)
-      setInspectDraft({ name: '', host: '', port: 22, username: '', password: '', vendor: 'linux', remark: '' })
+      setInspectDraft({ name: '', host: '', port: 22, username: '', password: '', vendor: 'linux', remark: '', encryptedPassword: '' })
     }
     setInspectEditorOpen(true)
   }
 
-  function saveInspectDevice() {
+  async function saveInspectDevice() {
     if (!inspectDraft.name.trim() || !inspectDraft.host.trim()) return
+    let encryptedPassword = inspectDraft.encryptedPassword ?? ''
+    if (inspectDraft.password) {
+      try {
+        encryptedPassword = await invoke<string>('encrypt_secret', { plain: inspectDraft.password })
+      } catch (reason) {
+        onNotify(t('密码加密失败，设备未保存：') + String(reason).replace(/^Error:\s*/i, ''))
+        return
+      }
+    }
+    const base = {
+      name: inspectDraft.name,
+      host: inspectDraft.host,
+      port: Number(inspectDraft.port) || 22,
+      username: inspectDraft.username,
+      password: '',
+      vendor: inspectDraft.vendor,
+      remark: inspectDraft.remark,
+      encryptedPassword,
+    }
     if (inspectEditingId) {
-      onUpdateInspectDevice(inspectEditingId, {
-        ...inspectDraft,
-        port: Number(inspectDraft.port) || 22,
-      })
+      onUpdateInspectDevice(inspectEditingId, base)
       onNotify(t('设备已更新'))
     } else {
-      onAddInspectDevice({
-        ...inspectDraft,
-        port: Number(inspectDraft.port) || 22,
-      })
+      onAddInspectDevice(base)
       onNotify(t('设备已添加'))
     }
     setInspectEditorOpen(false)
@@ -10641,7 +10716,7 @@ function InspectWorkspace({
   }
 
   async function runInspectBatch() {
-    const selectedDevices = inspectDevices.filter((d) => selectedInspectIds.has(d.id))
+    const selectedDevices = await resolveInspectPasswords(inspectDevices.filter((d) => selectedInspectIds.has(d.id)))
     const commandList = inspectCommands
       .map((item) => ({ name: item.name, command: item.command.trim() }))
       .filter((item) => item.command.length > 0)
@@ -11018,6 +11093,7 @@ function InspectWorkspace({
   }
 
   function openPlanEditor(plan?: InspectPlan) {
+    setInspectPlanCmdDraft(plan ? plan.commands.map((c) => c.command).join('\n') : '')
     setInspectPlanEditor(
       plan
         ? { ...plan }
@@ -11054,21 +11130,6 @@ function InspectWorkspace({
     )
   }
 
-  function setPlanCommandsText(value: string) {
-    setInspectPlanEditor((prev) =>
-      prev
-        ? {
-            ...prev,
-            commands: value
-              .split('\n')
-              .map((line) => line.trim())
-              .filter(Boolean)
-              .map((cmd) => ({ name: cmd.slice(0, 30), command: cmd })),
-          }
-        : prev,
-    )
-  }
-
   function savePlanDraft() {
     if (!inspectPlanEditor) return
     if (!inspectPlanEditor.name.trim()) {
@@ -11079,7 +11140,11 @@ function InspectWorkspace({
       onNotify(t('请至少选择一台设备'))
       return
     }
-    const commands = inspectPlanEditor.commands.map((c) => ({ name: c.name, command: c.command.trim() })).filter((c) => c.command.length > 0)
+    const commands = inspectPlanCmdDraft
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((cmd) => ({ name: cmd.slice(0, 30), command: cmd }))
     if (commands.length === 0) {
       onNotify(t('请至少输入一条命令'))
       return
@@ -11118,7 +11183,7 @@ function InspectWorkspace({
   }
 
   async function executePlanNow(plan: InspectPlan) {
-    const devices = inspectDevices.filter((d) => plan.deviceIds.includes(d.id))
+    const devices = await resolveInspectPasswords(inspectDevices.filter((d) => plan.deviceIds.includes(d.id)))
     const commands = plan.commands.map((c) => ({ name: c.name, command: c.command.trim() })).filter((c) => c.command.length > 0)
     if (devices.length === 0 || commands.length === 0) {
       onNotify(`${t('计划')}「${plan.name}」${t('没有可用设备或命令，请先编辑计划')}`)
@@ -12181,8 +12246,8 @@ function InspectWorkspace({
                   <span>{t('执行命令（每行一条）')}</span>
                   <textarea
                     rows={6}
-                    value={inspectPlanEditor.commands.map((c) => c.command).join('\n')}
-                    onChange={(event) => setPlanCommandsText(event.target.value)}
+                    value={inspectPlanCmdDraft}
+                    onChange={(event) => setInspectPlanCmdDraft(event.target.value)}
                     placeholder={t('每行一条命令，如：\ndisplay version\ndisplay device')}
                   />
                   <span className="inspect-plan-hint">{t('多行命令将按顺序在每台设备上依次执行')}</span>
@@ -15832,7 +15897,23 @@ function normalizeInspectDevice(device: unknown): InspectDevice | null {
     password: typeof d.password === 'string' ? d.password : '',
     vendor: typeof d.vendor === 'string' ? d.vendor : 'linux',
     remark: typeof d.remark === 'string' ? d.remark : '',
+    encryptedPassword: typeof d.encryptedPassword === 'string' ? d.encryptedPassword : '',
   }
+}
+
+async function resolveInspectPasswords(list: InspectDevice[]): Promise<InspectDevice[]> {
+  return Promise.all(
+    list.map(async (d) => {
+      if (d.encryptedPassword) {
+        try {
+          return { ...d, password: await invoke<string>('decrypt_secret', { cipher: d.encryptedPassword }) }
+        } catch {
+          return { ...d, password: '' }
+        }
+      }
+      return d
+    }),
+  )
 }
 
 function usePersistentInspectDevices() {

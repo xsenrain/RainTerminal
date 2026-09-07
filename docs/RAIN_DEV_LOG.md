@@ -435,3 +435,18 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 执行结果写入工作台结果区（不影响其他功能），也可在巡检历史查看
 - **说明**：仅应用运行期间生效（软件关闭不执行）——个人运维工具定位，非后台服务
 - **验证**：npm run build 通过（无 TS 错误）
+
+
+---
+
+## 2026-09-08 · 修复：计划命令输入无法空格/换行 + P3 凭据安全（DPAPI 加密）
+
+- **改动文件**：`src/App.tsx`、`src/index.css`、`src/tauriBridge.ts`、`src-tauri/Cargo.toml`、`src-tauri/src/batch_inspect.rs`、`src-tauri/src/lib.rs`、`docs/RAIN_DEV_LOG.md`
+- **修复：计划命令输入**：文本框 onChange 时逐字符 trim+重建导致输入过程中空格/换行被吞（`df -h` 变 `df-h`）。改为独立 draft state，输入期间不做任何清洗，保存计划时才按行解析
+- **P3 凭据安全**：
+  - 新增 Rust 命令 `encrypt_secret` / `decrypt_secret`：Windows DPAPI（CryptProtectData/CryptUnprotectData，CRYPTPROTECT_UI_FORBIDDEN），仅当前 Windows 用户可解密，输出 hex；非 Windows 退化为 hex 编码（仅开发用）
+  - 设备密码不再明文存储：保存/编辑设备时密码经 DPAPI 加密后存 `encryptedPassword` 字段，password 字段清空；编辑时打开表单自动解密显示原密码
+  - 启动时自动迁移：检测到旧数据中的明文密码，一次性加密后重存，无需手动处理
+  - 执行链路（手动巡检 / 定时计划）在执行前批量解密密码，不影响使用
+  - tauriBridge 沙箱 mock 增加 encrypt/decrypt（hex 模拟，真实加密在 Rust 端）
+- **验证**：npm run build 通过、cargo check 通过

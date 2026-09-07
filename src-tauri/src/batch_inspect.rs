@@ -1037,3 +1037,102 @@ pub fn delete_inspect_history(app: AppHandle, id: String) -> Result<bool, String
         Err(error) => Err(format!("删除历史失败: {error}")),
     }
 }
+
+// ==================== P3 凭据安全（Windows DPAPI） ====================
+
+fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    let s = s.trim();
+    if s.len() % 2 != 0 {
+        return Err("密文 hex 长度不合法".into());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| format!("非法 hex: {e}")))
+        .collect()
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 用 Windows DPAPI 加密一段明文（输出 hex），仅当前 Windows 用户可解密。
+/// 非 Windows 平台退化为 hex 编码（不加密），仅用于开发调试。
+#[tauri::command]
+pub fn encrypt_secret(plain: String) -> Result<String, String> {
+    if plain.is_empty() {
+        return Ok(String::new());
+    }
+    #[cfg(windows)]
+    {
+        use windows::core::w;
+        use windows::Win32::Foundation::{LocalFree, HLOCAL};
+        use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB};
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: plain.len() as u32,
+            pbData: plain.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB::default();
+        let res = unsafe {
+            CryptProtectData(
+                &input,
+                w!("RainTerminal 设备凭据"),
+                None,
+                None,
+                Some(std::ptr::null()),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        };
+        if res.is_err() {
+            return Err(format!("DPAPI 加密失败: {res:?}"));
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) };
+        let hex = encode_hex(bytes);
+        let _ = unsafe { LocalFree(Some(HLOCAL(output.pbData as *mut _))) };
+        Ok(hex)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(encode_hex(plain.as_bytes()))
+    }
+}
+
+/// 解密 encrypt_secret 的输出。仅当前 Windows 用户、当前系统可解密。
+#[tauri::command]
+pub fn decrypt_secret(cipher: String) -> Result<String, String> {
+    if cipher.is_empty() {
+        return Ok(String::new());
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::{LocalFree, HLOCAL};
+        use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB};
+        let bytes = decode_hex(&cipher)?;
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: bytes.len() as u32,
+            pbData: bytes.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB::default();
+        let res = unsafe {
+            CryptUnprotectData(
+                &input,
+                None,
+                None,
+                None,
+                Some(std::ptr::null()),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        };
+        if res.is_err() {
+            return Err(format!("DPAPI 解密失败: {res:?}"));
+        }
+        let out = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec();
+        let _ = unsafe { LocalFree(Some(HLOCAL(output.pbData as *mut _))) };
+        String::from_utf8(out).map_err(|e| format!("解密结果不是合法 UTF-8: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        decode_hex(&cipher).and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
+    }
+}

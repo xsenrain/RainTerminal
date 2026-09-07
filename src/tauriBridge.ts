@@ -176,6 +176,20 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
     case 'local_shell_resize':
     case 'ssh_resize':
       return undefined as T
+    case 'encrypt_secret': {
+      // 浏览器沙箱 mock：仅做 hex 编码，真实加密在 Rust 端走 Windows DPAPI
+      const plain = typeof args.plain === 'string' ? args.plain : ''
+      return Array.from(new TextEncoder().encode(plain))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('') as T
+    }
+    case 'decrypt_secret': {
+      const cipher = typeof args.cipher === 'string' ? args.cipher : ''
+      const bytes = new Uint8Array(
+        (cipher.match(/[0-9a-fA-F]{2}/g) ?? []).map((hex) => parseInt(hex, 16)),
+      )
+      return new TextDecoder().decode(bytes) as T
+    }
     case 'batch_execute_inspect': {
       const devices = Array.isArray(args.devices) ? args.devices : []
       const commands = Array.isArray(args.commands) ? args.commands : []
