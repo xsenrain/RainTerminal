@@ -191,14 +191,21 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       return new TextDecoder().decode(bytes) as T
     }
     case 'scan_inspect_network': {
-      // 沙箱 mock：模拟前 5 个 IP 在线（22/23 端口）
-      const cidr = typeof args.cidr === 'string' ? args.cidr : '192.168.1.0/24'
-      const ipPart = cidr.split('/')[0] ?? '192.168.1.0'
-      const seg = ipPart.split('.').slice(0, 3).join('.')
-      return Array.from({ length: 5 }, (_, i) => ({
-        ip: `${seg}.${i + 1}`,
-        open_ports: i % 2 === 0 ? [22] : [23],
-      })) as T
+      // 沙箱 mock：模拟前 5 个 IP 在线
+      const startIp = typeof args.start_ip === 'string' ? args.start_ip : '192.168.1.1'
+      const endIp = typeof args.end_ip === 'string' ? args.end_ip : '192.168.1.254'
+      const seg = startIp.split('.').slice(0, 3).join('.')
+      const startLast = Number(startIp.split('.')[3] ?? 1)
+      const endLast = Number(endIp.split('.')[3] ?? 254)
+      const list: { ip: string; name: string; open_ports: number[] }[] = []
+      for (let n = startLast; n <= Math.min(endLast, startLast + 4); n++) {
+        list.push({
+          ip: `${seg}.${n}`,
+          name: n % 2 === 0 ? `HOST-${n}` : '',
+          open_ports: n % 3 === 0 ? [22, 80] : n % 2 === 0 ? [23, 3389] : [22],
+        })
+      }
+      return list as T
     }
     case 'batch_execute_inspect': {
       const devices = Array.isArray(args.devices) ? args.devices : []

@@ -1138,28 +1138,13 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（端口探测） ====================
+// ==================== 网段发现（端口探测，异步 + 进度事件） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
     pub ip: String,
+    pub name: String,
     pub open_ports: Vec<u16>,
-}
-
-fn parse_cidr(cidr: &str) -> Result<(std::net::Ipv4Addr, u8), String> {
-    let trimmed = cidr.trim();
-    let (ip_part, prefix_part) = trimmed
-        .split_once('/')
-        .ok_or_else(|| "格式应为 192.168.1.0/24".to_string())?;
-    let prefix: u8 = prefix_part
-        .trim()
-        .parse()
-        .map_err(|_| "子网掩码无效".to_string())?;
-    let ip: std::net::Ipv4Addr = ip_part
-        .trim()
-        .parse()
-        .map_err(|_| "IP 地址无效".to_string())?;
-    Ok((ip, prefix))
 }
 
 fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
@@ -1167,56 +1152,93 @@ fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
     std::net::TcpStream::connect_timeout(&addr, timeout).is_ok()
 }
 
-/// 扫描网段内开放 22/23 端口的在线设备。仅支持 /16 ~ /30，逐 IP 并行探测。
-#[tauri::command]
-pub fn scan_inspect_network(cidr: String) -> Result<Vec<InspectScanHit>, String> {
-    let (base_ip, prefix) = parse_cidr(&cidr)?;
-    if !(16..=30).contains(&prefix) {
-        return Err("仅支持 /16 到 /30 的网段".into());
-    }
-    let host_count = 1usize << (32 - prefix as u32);
-    let base_u32 = u32::from(base_ip);
-
-    let mut ips = Vec::with_capacity(host_count.saturating_sub(2));
-    for i in 1..host_count.saturating_sub(1) {
-        ips.push(std::net::Ipv4Addr::from(base_u32 + i as u32));
-    }
-
-    let probe_ports = [22u16, 23u16];
-    let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut handles = Vec::new();
-    const CHUNK: usize = 64;
-
-    for chunk in ips.chunks(CHUNK) {
-        let chunk = chunk.to_vec();
-        let hits = Arc::clone(&hits);
-        handles.push(std::thread::spawn(move || {
-            for ip in chunk {
-                let mut open = Vec::new();
-                for port in probe_ports {
-                    if tcp_probe(ip, port, Duration::from_millis(600)) {
-                        open.push(port);
-                    }
-                }
-                if !open.is_empty() {
-                    hits.lock().unwrap().push(InspectScanHit {
-                        ip: ip.to_string(),
-                        open_ports: open,
-                    });
-                }
+fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
+    match dns_lookup::lookup_addr(&std::net::IpAddr::V4(ip)) {
+        Ok(name) => {
+            let name = name.trim_end_matches('.').to_string();
+            if name.is_empty() || name == ip.to_string() {
+                String::new()
+            } else {
+                name
             }
-        }));
+        }
+        Err(_) => String::new(),
     }
-    for handle in handles {
-        let _ = handle.join();
-    }
-
-    let mut result = hits.lock().unwrap().clone();
-    result.sort_by_key(|hit| {
-        hit.ip
-            .parse::<std::net::Ipv4Addr>()
-            .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED)
-    });
-    Ok(result)
 }
 
+/// 扫描 [start_ip, end_ip] 范围内开放常用服务端口的设备（异步执行，不阻塞主线程）。
+/// 探测 22/23/3389/5900/21/80/443，附带反向域名解析，进度通过 inspect-scan-progress 事件推送。
+#[tauri::command]
+pub async fn scan_inspect_network(
+    app: tauri::AppHandle,
+    start_ip: String,
+    end_ip: String,
+) -> Result<Vec<InspectScanHit>, String> {
+    let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<InspectScanHit>, String> {
+        let start: std::net::Ipv4Addr = start_ip.trim().parse().map_err(|_| "起始 IP 无效".to_string())?;
+        let end: std::net::Ipv4Addr = end_ip.trim().parse().map_err(|_| "结束 IP 无效".to_string())?;
+        let start_u = u32::from(start);
+        let end_u = u32::from(end);
+        if end_u < start_u {
+            return Err("结束 IP 不能小于起始 IP".into());
+        }
+        let count = (end_u - start_u + 1) as usize;
+        if count > 8192 {
+            return Err("扫描范围过大，最多支持 8192 个 IP（如 /19）".into());
+        }
+
+        let probe_ports: [u16; 7] = [22, 23, 3389, 5900, 21, 80, 443];
+        let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let processed = Arc::new(AtomicUsize::new(0));
+
+        // 按 64 个 IP 一块分片，每块一个线程；线程结束后推送一次进度事件
+        let mut handles = Vec::new();
+        const CHUNK: usize = 64;
+        let mut idx = 0usize;
+        while idx < count {
+            let chunk_len = CHUNK.min(count - idx);
+            let chunk_start = start_u + idx as u32;
+            let hits = Arc::clone(&hits);
+            let processed = Arc::clone(&processed);
+            let app = app.clone();
+            handles.push(std::thread::spawn(move || {
+                for j in 0..chunk_len {
+                    let ip = std::net::Ipv4Addr::from(chunk_start + j as u32);
+                    let mut open = Vec::new();
+                    for port in probe_ports {
+                        if tcp_probe(ip, port, Duration::from_millis(500)) {
+                            open.push(port);
+                        }
+                    }
+                    if !open.is_empty() {
+                        hits.lock().unwrap().push(InspectScanHit {
+                            ip: ip.to_string(),
+                            name: reverse_hostname(ip),
+                            open_ports: open,
+                        });
+                    }
+                }
+                let done = processed.fetch_add(chunk_len, Ordering::SeqCst) + chunk_len;
+                let _ = app.emit(
+                    "inspect-scan-progress",
+                    serde_json::json!({ "scanned": done, "total": count }),
+                );
+            }));
+            idx += chunk_len;
+        }
+        for handle in handles {
+            let _ = handle.join();
+        }
+
+        let mut result = hits.lock().unwrap().clone();
+        result.sort_by_key(|hit| {
+            hit.ip
+                .parse::<std::net::Ipv4Addr>()
+                .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED)
+        });
+        Ok(result)
+    });
+    spawned
+        .await
+        .map_err(|e| format!("扫描线程异常: {e}"))?
+}

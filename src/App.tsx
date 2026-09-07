@@ -10541,9 +10541,11 @@ function InspectToolbox({
 }) {
   const { t } = useAppLocale()
   const [vendors] = useState<string[]>(() => readInspectVendors())
-  const [discoverCidr, setDiscoverCidr] = useState('192.168.1.0/24')
+  const [discoverStart, setDiscoverStart] = useState('192.168.1.1')
+  const [discoverEnd, setDiscoverEnd] = useState('192.168.1.254')
   const [discoverScanning, setDiscoverScanning] = useState(false)
-  const [discoverHits, setDiscoverHits] = useState<{ ip: string; open_ports: number[] }[] | null>(null)
+  const [discoverProgress, setDiscoverProgress] = useState<{ scanned: number; total: number } | null>(null)
+  const [discoverHits, setDiscoverHits] = useState<{ ip: string; name: string; open_ports: number[] }[] | null>(null)
   const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(new Set())
   const [discoverVendor, setDiscoverVendor] = useState<Record<string, string>>({})
 
@@ -10552,22 +10554,36 @@ function InspectToolbox({
     return 'linux'
   }
 
+  useEffect(() => {
+    const unlistenTask = listen<{ scanned: number; total: number }>('inspect-scan-progress', (event) => {
+      setDiscoverProgress({ scanned: event.payload.scanned, total: event.payload.total })
+    }).catch(() => () => undefined)
+    return () => {
+      void unlistenTask.then((unlisten) => unlisten())
+    }
+  }, [])
+
   async function runScan() {
     if (discoverScanning) return
     setDiscoverScanning(true)
+    setDiscoverProgress(null)
     setDiscoverHits(null)
     setDiscoverSelected(new Set())
     setDiscoverVendor({})
     try {
-      const hits = await invoke<{ ip: string; open_ports: number[] }[]>('scan_inspect_network', { cidr: discoverCidr })
+      const hits = await invoke<{ ip: string; name: string; open_ports: number[] }[]>('scan_inspect_network', {
+        start_ip: discoverStart,
+        end_ip: discoverEnd,
+      })
       setDiscoverHits(hits)
       setDiscoverSelected(new Set(hits.map((h) => h.ip)))
       setDiscoverVendor(Object.fromEntries(hits.map((h) => [h.ip, guessVendor(h.open_ports)])))
-      if (hits.length === 0) onNotify(t('网段内未发现开放 22/23 端口的设备'))
+      if (hits.length === 0) onNotify(t('范围内未发现开放服务的设备'))
     } catch (reason) {
       onNotify(String(reason).replace(/^Error:\s*/i, ''))
     } finally {
       setDiscoverScanning(false)
+      setDiscoverProgress(null)
     }
   }
 
@@ -10581,6 +10597,19 @@ function InspectToolbox({
       }
       return next
     })
+  }
+
+  async function addOneDevice(hit: { ip: string; name: string; open_ports: number[] }) {
+    onAddInspectDevice({
+      name: hit.name || hit.ip,
+      host: hit.ip,
+      port: hit.open_ports.includes(22) ? 22 : 23,
+      username: '',
+      password: '',
+      vendor: discoverVendor[hit.ip] ?? guessVendor(hit.open_ports),
+      remark: t('网段发现'),
+    })
+    onNotify(`${t('已添加')} ${hit.ip}`)
   }
 
   async function addDevices() {
@@ -10616,16 +10645,27 @@ function InspectToolbox({
           <div className="inspect-toolbox-card-head">
             <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
-            <span>{t('探测网段内开放 22(SSH)/23(Telnet) 端口的设备，批量生成巡检设备清单，支持 /16 ~ /30')}</span>
+            <span>{t('探测 IP 范围内开放的常用服务端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS），识别在线设备并批量生成巡检设备清单，最多 8192 个 IP')}</span>
           </div>
           <div className="inspect-discover-row">
+            <span className="inspect-discover-label">{t('IP 范围')}</span>
             <input
-              value={discoverCidr}
-              onChange={(event) => setDiscoverCidr(event.target.value)}
+              value={discoverStart}
+              onChange={(event) => setDiscoverStart(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void runScan()
               }}
-              placeholder="192.168.1.0/24"
+              placeholder="192.168.1.1"
+              disabled={discoverScanning}
+            />
+            <span className="inspect-discover-dash">→</span>
+            <input
+              value={discoverEnd}
+              onChange={(event) => setDiscoverEnd(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void runScan()
+              }}
+              placeholder="192.168.1.254"
               disabled={discoverScanning}
             />
             <button className="utility-primary-button compact" type="button" onClick={() => void runScan()} disabled={discoverScanning}>
@@ -10633,34 +10673,80 @@ function InspectToolbox({
               {discoverScanning ? t('扫描中…') : t('开始扫描')}
             </button>
           </div>
+          {discoverScanning && discoverProgress && (
+            <div className="inspect-scan-progress">
+              <div className="inspect-scan-progress-bar" style={{ width: `${Math.min(100, Math.round((discoverProgress.scanned / Math.max(1, discoverProgress.total)) * 100))}%` }} />
+              <span>{t('扫描中')}… {discoverProgress.scanned}/{discoverProgress.total}</span>
+            </div>
+          )}
           {discoverHits && (
-            <>
-              <div className="inspect-discover-results">
-                {discoverHits.length === 0 && <div className="inspect-discover-empty">{t('网段内未发现开放 22/23 端口的设备')}</div>}
-                {discoverHits.map((hit) => (
-                  <div className="inspect-discover-hit" key={hit.ip}>
-                    <label>
-                      <input type="checkbox" checked={discoverSelected.has(hit.ip)} onChange={() => toggleHit(hit.ip)} />
-                    </label>
-                    <strong>{hit.ip}</strong>
-                    <span className="inspect-discover-ports">
-                      {hit.open_ports.map((p) => (p === 22 ? t('SSH') : p === 23 ? t('Telnet') : String(p))).join(' / ')}
-                    </span>
-                    <select value={discoverVendor[hit.ip] ?? guessVendor(hit.open_ports)} onChange={(event) => setDiscoverVendor((prev) => ({ ...prev, [hit.ip]: event.target.value }))}>
-                      {vendors.map((vendor) => (
-                        <option key={vendor} value={vendor}>{vendor}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
+            <div className="inspect-scan-table-wrap">
+              <table className="inspect-scan-table">
+                <thead>
+                  <tr>
+                    <th className="inspect-scan-col-check" />
+                    <th>{t('IP 地址')}</th>
+                    <th>{t('名称')}</th>
+                    <th title="22">SSH</th>
+                    <th title="3389">RDP</th>
+                    <th title="5900">VNC</th>
+                    <th title="21">FTP</th>
+                    <th title="23">Telnet</th>
+                    <th title="80">HTTP</th>
+                    <th title="443">HTTPS</th>
+                    <th>{t('厂商')}</th>
+                    <th>{t('操作')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discoverHits.length === 0 && (
+                    <tr>
+                      <td className="inspect-discover-empty" colSpan={12}>{t('范围内未发现开放服务的设备')}</td>
+                    </tr>
+                  )}
+                  {discoverHits.map((hit) => {
+                    const ports = hit.open_ports
+                    const mark = (port: number) =>
+                      ports.includes(port) ? <span className="scan-port-on">✓</span> : <span className="scan-port-off">✗</span>
+                    return (
+                      <tr key={hit.ip}>
+                        <td className="inspect-scan-col-check">
+                          <input type="checkbox" checked={discoverSelected.has(hit.ip)} onChange={() => toggleHit(hit.ip)} />
+                        </td>
+                        <td className="mono">{hit.ip}</td>
+                        <td>{hit.name || '-'}</td>
+                        <td>{mark(22)}</td>
+                        <td>{mark(3389)}</td>
+                        <td>{mark(5900)}</td>
+                        <td>{mark(21)}</td>
+                        <td>{mark(23)}</td>
+                        <td>{mark(80)}</td>
+                        <td>{mark(443)}</td>
+                        <td>
+                          <select className="inspect-scan-vendor" value={discoverVendor[hit.ip] ?? guessVendor(hit.open_ports)} onChange={(event) => setDiscoverVendor((prev) => ({ ...prev, [hit.ip]: event.target.value }))}>
+                            {vendors.map((vendor) => (
+                              <option key={vendor} value={vendor}>{vendor}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <button className="utility-text-button compact" type="button" onClick={() => void addOneDevice(hit)}>
+                            <Plus size={12} />
+                            {t('添加')}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
               <div className="inspect-discover-actions">
-                <button className="utility-primary-button compact" type="button" onClick={() => void addDevices()}>
+                <button className="utility-primary-button compact" type="button" onClick={() => void addDevices()} disabled={discoverSelected.size === 0}>
                   <Plus size={13} />
                   {t('添加勾选设备')} ({discoverSelected.size})
                 </button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>

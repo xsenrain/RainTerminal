@@ -477,3 +477,19 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 小工具页设计为可扩展集合：后续新工具（端口扫描、ping、子网计算等）在网格中加卡片即可
 - **说明**：厂商列表复用巡检模块的持久化配置（读取 localStorage rain.inspectVendors）
 - **验证**：npm run build 通过
+
+
+---
+
+## 2026-09-08 · 网段发现 V2：修复主界面卡死 + 参照 MobaXterm 重做扫描界面
+
+- **改动文件**：`src/App.tsx`、`src/index.css`、`src/tauriBridge.ts`、`src-tauri/Cargo.toml`、`src-tauri/src/batch_inspect.rs`、`docs/RAIN_DEV_LOG.md`
+- **修复卡死**：`scan_inspect_network` 由同步命令改为 async + `spawn_blocking`，扫描在后台线程执行，不再阻塞 Tauri 主线程（主界面不会未响应）
+- **界面重做（参考 MobaXterm 网络扫描工具）**：
+  - 输入改为 IP 起止范围（起始 IP → 结束 IP，最多 8192 个 IP）
+  - 结果改为服务探测表格：IP 地址 | 名称 | SSH | RDP | VNC | FTP | Telnet | HTTP | HTTPS | 厂商 | 操作，开放端口 ✓ 绿色、关闭 ✗ 灰色
+  - 每行独立「添加」按钮 + 顶部「添加勾选设备」批量按钮
+  - 名称列自动反向 DNS 解析主机名（dns-lookup，解析不到显示 -）
+- **进度反馈**：后端每处理 64 个 IP 推送 `inspect-scan-progress` 事件，前端显示进度条（扫描中 x/y）
+- **探测端口**：22/23/3389/5900/21/80/443，500ms 超时，64 IP/线程分片并行
+- **验证**：npm run build 通过、cargo check 通过（新增 dns-lookup 依赖）
