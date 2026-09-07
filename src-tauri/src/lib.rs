@@ -6327,6 +6327,7 @@ fn save_text_export(
     let (filter_name, extensions): (&str, &[&str]) = match filter.as_deref() {
         Some("csv") => ("CSV", &["csv"][..]),
         Some("txt") => ("Text", &["txt"][..]),
+        Some("html") => ("HTML", &["html"][..]),
         _ => ("JSON", &["json"][..]),
     };
     let Some(path) = rfd::FileDialog::new()
@@ -7375,7 +7376,14 @@ pub fn run() {
             batch_inspect::get_inspect_log_dir,
             batch_inspect::set_inspect_log_dir,
             batch_inspect::open_inspect_log_dir,
-            batch_inspect::pick_inspect_log_dir
+            batch_inspect::pick_inspect_log_dir,
+            batch_inspect::save_inspect_history,
+            batch_inspect::list_inspect_history,
+            batch_inspect::get_inspect_history,
+            batch_inspect::delete_inspect_history,
+            batch_inspect::get_inspect_rules,
+            batch_inspect::save_inspect_rules,
+            batch_inspect::open_inspect_log_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

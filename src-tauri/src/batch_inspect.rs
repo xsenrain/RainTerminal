@@ -43,7 +43,7 @@ pub struct InspectCommandInput {
     pub command: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectCommandOutput {
     pub command: String,
@@ -55,7 +55,7 @@ pub struct InspectCommandOutput {
     pub issues: Vec<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectExecResult {
     pub device_name: String,
@@ -96,6 +96,7 @@ pub async fn batch_execute_inspect(
     }
     let log_dir = resolve_inspect_log_dir(&app);
     let _ = fs::create_dir_all(&log_dir);
+    ensure_rules_loaded(&app);
     let workers = (concurrency.clamp(1, 200) as usize).min(total);
 
     // 将阻塞的 SSH 连接/执行工作移出 IPC 线程，避免设备连接超时期间阻塞主界面交互。
@@ -488,6 +489,52 @@ struct InspectRule {
     label: &'static str,              // 命中原因（中文）
 }
 
+/// 可持久化规则（JSON 配置驱动，P2 可自定义）。
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectRuleConfig {
+    pub id: String,
+    pub vendor: String,
+    pub command_contains: String,
+    /// 健康等级：warn / critical
+    pub severity: String,
+    /// 判断类型：keyword（包含关键词）/ missing（缺少关键词）/ threshold（数值阈值）
+    #[serde(rename = "type")]
+    pub rule_type: String,
+    pub keyword: Option<String>,
+    pub missing_keyword: Option<String>,
+    pub threshold: Option<f64>,
+    /// 阈值规则是否按"NN%"百分比取值（使用率类规则避免误取容量数字）
+    pub percent: bool,
+    pub label: String,
+    pub enabled: bool,
+}
+
+impl InspectRuleConfig {
+    fn from_builtin(index: usize, rule: &InspectRule) -> Self {
+        let rule_type = if rule.keyword.is_some() {
+            "keyword"
+        } else if rule.missing_keyword.is_some() {
+            "missing"
+        } else {
+            "threshold"
+        };
+        InspectRuleConfig {
+            id: format!("builtin-{index}"),
+            vendor: rule.vendor.to_string(),
+            command_contains: rule.command_contains.to_string(),
+            severity: rule.severity.to_string(),
+            rule_type: rule_type.to_string(),
+            keyword: rule.keyword.map(|v| v.to_string()),
+            missing_keyword: rule.missing_keyword.map(|v| v.to_string()),
+            threshold: rule.threshold,
+            percent: rule.percent,
+            label: rule.label.to_string(),
+            enabled: true,
+        }
+    }
+}
+
 /// 预设规则库：按厂商 + 命令内容子串匹配。
 const DEFAULT_INSPECT_RULES: &[InspectRule] = &[
     // ---- Linux ----
@@ -533,34 +580,49 @@ const DEFAULT_INSPECT_RULES: &[InspectRule] = &[
 ];
 
 /// 对单个命令输出执行故障判断，返回（健康等级, 命中原因列表）。
+/// 规则来自全局缓存（batch_execute_inspect 启动时已加载配置文件）。
 fn assess_output(vendor: &str, command: &str, output: &str) -> (String, Vec<String>) {
     let command_lower = command.to_ascii_lowercase();
     let output_lower = output.to_ascii_lowercase();
-    let mut hits: Vec<(&'static str, String)> = Vec::new();
+    let mut hits: Vec<(&str, String)> = Vec::new();
 
-    for rule in DEFAULT_INSPECT_RULES {
+    let rules = RULES_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(rule_list) = rules.as_deref() else {
+        return ("ok".to_string(), Vec::new());
+    };
+    for rule in rule_list.iter() {
+        if !rule.enabled {
+            continue;
+        }
         if rule.vendor != vendor {
             continue;
         }
-        if !command_lower.contains(rule.command_contains) {
+        if !command_lower.contains(&rule.command_contains.to_ascii_lowercase()) {
             continue;
         }
-        let hit = if let Some(keyword) = rule.keyword {
-            output_lower.contains(&keyword.to_ascii_lowercase())
-        } else if let Some(missing) = rule.missing_keyword {
-            !output_lower.contains(&missing.to_ascii_lowercase())
-        } else if let Some(threshold) = rule.threshold {
-            let value = if rule.percent {
-                max_percent(output)
-            } else {
-                max_number(output)
-            };
-            value >= threshold
-        } else {
-            false
+        let hit = match rule.rule_type.as_str() {
+            "keyword" => rule
+                .keyword
+                .as_deref()
+                .map(|keyword| output_lower.contains(&keyword.to_ascii_lowercase()))
+                .unwrap_or(false),
+            "missing" => rule
+                .missing_keyword
+                .as_deref()
+                .map(|keyword| !output_lower.contains(&keyword.to_ascii_lowercase()))
+                .unwrap_or(false),
+            "threshold" => rule.threshold.map(|threshold| {
+                let value = if rule.percent {
+                    max_percent(output)
+                } else {
+                    max_number(output)
+                };
+                value >= threshold
+            }).unwrap_or(false),
+            _ => false,
         };
         if hit {
-            hits.push((rule.severity, rule.label.to_string()));
+            hits.push((&rule.severity, rule.label.clone()));
         }
     }
 
@@ -577,6 +639,97 @@ fn assess_output(vendor: &str, command: &str, output: &str) -> (String, Vec<Stri
     }
     let issues = hits.into_iter().map(|(_, label)| label).collect();
     (health.to_string(), issues)
+}
+
+/* ============ 规则配置存储（P2 自定义） ============ */
+
+const INSPECT_RULES_FILE: &str = "inspect_rules.json";
+
+/// 规则全局缓存：巡检启动时加载一次，保存规则时同步更新。
+static RULES_CACHE: Mutex<Option<Vec<InspectRuleConfig>>> = Mutex::new(None);
+
+fn inspect_rules_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(INSPECT_RULES_FILE)
+}
+
+/// 生成内置默认规则（硬编码表 → 配置格式）。
+fn default_inspect_rules() -> Vec<InspectRuleConfig> {
+    DEFAULT_INSPECT_RULES
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| InspectRuleConfig::from_builtin(index, rule))
+        .collect()
+}
+
+/// 加载规则：优先读取配置文件；不存在则写入内置默认规则。
+fn load_inspect_rules(app: &AppHandle) -> Vec<InspectRuleConfig> {
+    let path = inspect_rules_path(app);
+    let loaded = fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Vec<InspectRuleConfig>>(&content).ok());
+    let rules = loaded.unwrap_or_else(|| {
+        let defaults = default_inspect_rules();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(content) = serde_json::to_string_pretty(&defaults) {
+            let _ = fs::write(&path, content);
+        }
+        defaults
+    });
+    if let Ok(mut cache) = RULES_CACHE.lock() {
+        *cache = Some(rules.clone());
+    }
+    rules
+}
+
+/// 获取全部故障判断规则。
+#[tauri::command]
+pub fn get_inspect_rules(app: AppHandle) -> Result<Vec<InspectRuleConfig>, String> {
+    Ok(load_inspect_rules(&app))
+}
+
+/// 保存故障判断规则（覆盖全量并立即生效）。
+#[tauri::command]
+pub fn save_inspect_rules(app: AppHandle, rules: Vec<InspectRuleConfig>) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for rule in &rules {
+        if rule.vendor.trim().is_empty() {
+            return Err("规则厂商不能为空".into());
+        }
+        if !matches!(rule.severity.as_str(), "warn" | "critical") {
+            return Err("规则等级只能是 warn 或 critical".into());
+        }
+        if rule.label.trim().is_empty() {
+            return Err("规则说明不能为空".into());
+        }
+        if rule.command_contains.trim().is_empty() && rule.rule_type != "keyword" {
+            return Err("规则的匹配命令不能为空".into());
+        }
+        if !seen.insert(rule.id.clone()) {
+            return Err(format!("规则 ID 重复: {}", rule.id));
+        }
+    }
+    let path = inspect_rules_path(&app);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建规则目录失败: {e}"))?;
+    }
+    let content = serde_json::to_string_pretty(&rules).map_err(|e| format!("序列化失败: {e}"))?;
+    fs::write(&path, content).map_err(|e| format!("保存规则失败: {e}"))?;
+    if let Ok(mut cache) = RULES_CACHE.lock() {
+        *cache = Some(rules);
+    }
+    Ok(())
+}
+
+/// 巡检启动时确保规则缓存已加载。
+fn ensure_rules_loaded(app: &AppHandle) {
+    if RULES_CACHE.lock().map(|c| c.is_none()).unwrap_or(true) {
+        let _ = load_inspect_rules(app);
+    }
 }
 
 /// 提取输出中"NN% / NN.N%"格式的最大值（用于使用率类规则，避免把容量数字误当百分比）。
@@ -726,6 +879,23 @@ pub fn open_inspect_log_dir(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 在资源管理器中定位并打开单个巡检日志文件（默认关联程序）。
+#[tauri::command]
+pub fn open_inspect_log_file(path: String) -> Result<(), String> {
+    let path_buf = PathBuf::from(&path);
+    if !path_buf.exists() {
+        return Err(format!("日志文件不存在: {path}"));
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("打开日志文件失败: {error}"))?;
+    }
+    Ok(())
+}
+
 /// 弹出目录选择框，返回用户选择的日志保存目录（取消时返回 None）。
 #[tauri::command]
 pub fn pick_inspect_log_dir() -> Result<Option<String>, String> {
@@ -733,4 +903,137 @@ pub fn pick_inspect_log_dir() -> Result<Option<String>, String> {
         .set_title("选择巡检日志保存目录")
         .pick_folder();
     Ok(picked.map(|path| path.display().to_string()))
+}
+
+/* ============ 巡检历史存储 ============ */
+
+const INSPECT_HISTORY_DIR: &str = "inspect_history";
+
+/// 历史记录元信息（列表展示用）。
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectHistoryMeta {
+    pub id: String,
+    pub saved_at: String,
+    pub device_count: usize,
+    pub command_count: usize,
+    pub success_count: usize,
+    pub fail_count: usize,
+    pub critical_count: usize,
+    pub warn_count: usize,
+    pub ok_count: usize,
+}
+
+/// 完整历史记录（含全部设备结果）。
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectHistoryRecord {
+    pub id: String,
+    pub saved_at: String,
+    pub meta: InspectHistoryMeta,
+    pub results: Vec<InspectExecResult>,
+}
+
+fn inspect_history_dir(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(INSPECT_HISTORY_DIR)
+}
+
+/// 保存一次巡检结果到历史，返回历史记录 ID。
+#[tauri::command]
+pub fn save_inspect_history(
+    app: AppHandle,
+    results: Vec<InspectExecResult>,
+) -> Result<String, String> {
+    let dir = inspect_history_dir(&app);
+    fs::create_dir_all(&dir).map_err(|error| format!("创建历史目录失败: {error}"))?;
+    let id = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let saved_at = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let device_count = results.len();
+    let command_count = results.iter().map(|r| r.outputs.len()).sum();
+    let success_count = results.iter().filter(|r| r.success).count();
+    let fail_count = device_count - success_count;
+    let critical_count = results.iter().filter(|r| r.health == "critical").count();
+    let warn_count = results.iter().filter(|r| r.health == "warn").count();
+    let ok_count = results.iter().filter(|r| r.health == "ok").count();
+    let meta = InspectHistoryMeta {
+        id: id.clone(),
+        saved_at: saved_at.clone(),
+        device_count,
+        command_count,
+        success_count,
+        fail_count,
+        critical_count,
+        warn_count,
+        ok_count,
+    };
+    let record = InspectHistoryRecord {
+        id: id.clone(),
+        saved_at,
+        meta,
+        results,
+    };
+    let path = dir.join(format!("{id}.json"));
+    let content = serde_json::to_string_pretty(&record).map_err(|e| format!("序列化失败: {e}"))?;
+    fs::write(&path, content).map_err(|e| format!("保存历史失败: {e}"))?;
+    Ok(id)
+}
+
+/// 列出全部巡检历史（按时间倒序）。
+#[tauri::command]
+pub fn list_inspect_history(app: AppHandle) -> Result<Vec<InspectHistoryMeta>, String> {
+    let dir = inspect_history_dir(&app);
+    let mut metas: Vec<InspectHistoryMeta> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&dir) {
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
+            .collect();
+        files.sort();
+        for file in files {
+            if let Ok(content) = fs::read_to_string(&file) {
+                if let Ok(record) = serde_json::from_str::<InspectHistoryRecord>(&content) {
+                    metas.push(record.meta);
+                }
+            }
+        }
+    }
+    metas.sort_by(|a, b| b.id.cmp(&a.id));
+    Ok(metas)
+}
+
+/// 读取单条巡检历史完整内容。
+#[tauri::command]
+pub fn get_inspect_history(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<InspectHistoryRecord>, String> {
+    let safe_id: String = id.chars().filter(|c| c.is_ascii_digit() || *c == '_').collect();
+    if safe_id != id {
+        return Err("非法的历史记录 ID".into());
+    }
+    let path = inspect_history_dir(&app).join(format!("{safe_id}.json"));
+    match fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map(Some)
+            .map_err(|error| format!("读取历史失败: {error}")),
+        Err(_) => Ok(None),
+    }
+}
+
+/// 删除单条巡检历史。
+#[tauri::command]
+pub fn delete_inspect_history(app: AppHandle, id: String) -> Result<bool, String> {
+    let safe_id: String = id.chars().filter(|c| c.is_ascii_digit() || *c == '_').collect();
+    if safe_id != id {
+        return Err("非法的历史记录 ID".into());
+    }
+    let path = inspect_history_dir(&app).join(format!("{safe_id}.json"));
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("删除历史失败: {error}")),
+    }
 }

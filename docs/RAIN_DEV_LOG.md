@@ -228,7 +228,8 @@
 - **改动**：
   - 后端：删除 inspect_reset_all 命令（其断开全部 SSH 会话/隧道/传输/本地 Shell 的行为超出巡检范围）；巡检引擎本身即连即断、无常驻连接池，无需后端清理命令
   - 前端（App.tsx）：
-    - esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选、命令列表、进度，并发恢复默认 5，仅 toast 提示，不再调用后端、不动工作台连接
+    - 
+esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选、命令列表、进度，并发恢复默认 5，仅 toast 提示，不再调用后端、不动工作台连接
     - 新增 discardInspectResultRef：若重置时巡检仍在执行（invoke 无法中断），返回的结果/错误将被丢弃，不写入界面
   - tauriBridge.ts：移除 inspect_reset_all mock
 - **验证**：cargo check（无警告）+ npm run build 通过
@@ -336,3 +337,53 @@
 - 导出成功后：提示"已导出：<完整保存路径>"（save_text_export 返回路径此前被忽略）
 - 导出流程：点击导出表格 → 弹出系统保存框（默认文件名 巡检汇总-日期.csv）→ 选择位置保存 → toast 显示保存路径
 - 验证：npm run build 通过
+
+
+---
+
+## 2026-09-07 · 全局改名：服务器工作台 → 一体化运维工作台
+
+- **改动文件**：`src/App.tsx`（顶部副标题、关于页描述）、`src/i18n.ts`（2 处中英文）、`package.json`（description）
+- **改动内容**：
+  - 顶部副标题：服务器工作台 → **一体化运维工作台**
+  - 关于页描述：面向 Windows 的一体化服务器工作台… → 面向 Windows 的一体化**运维**工作台，将终端、文件、监控、进程、远程桌面与**自动化巡检**集中在可持久化工作区中
+  - package.json description 同步更新（集成 SSH、文件管理、监控、进程、远程桌面与自动化巡检）
+- **验证**：npm run build 通过；dev 版界面截图确认顶部副标题与关于页文案生效
+
+---
+
+## 2026-09-07 · P0：巡检历史 + HTML 报告
+
+- **改动文件**：`src-tauri/src/batch_inspect.rs`（历史存储后端）、`src-tauri/src/lib.rs`（命令注册 + save_text_export 支持 html filter）、`src/App.tsx`（历史 Tab / 详情 / HTML 报告生成）、`src/index.css`、`src/i18n.ts`、`src/tauriBridge.ts`（sandbox mock）
+- **后端**：
+  - 新增 `save_inspect_history` / `list_inspect_history` / `get_inspect_history` / `delete_inspect_history` 四个命令
+  - 存储位置：`%LOCALAPPDATA%/RainTerminal/inspect_history/YYYYMMDD_HHMMSS.json`（每条历史一个文件，含元信息 + 全部设备结果）
+  - 元信息：记录 ID / 保存时间 / 设备数 / 命令数 / 成功数 / 失败数 / 严重数 / 警告数
+  - ID 白名单校验（仅数字与下划线），防路径穿越
+  - `save_text_export` 新增 `filter: 'html'` 支持导出 .html
+  - 新增 `open_inspect_log_file`（资源管理器定位单个日志文件）
+- **前端**：
+  - 自动化页新增三个 Tab：**巡检工作台 / 巡检历史 / 故障规则**
+  - 巡检执行完成后自动调用 save_inspect_history 入库（失败静默，不阻塞界面）
+  - 巡检历史 Tab：记录列表（时间/设备/命令/成功失败/严重警告/查看/删除）+ 刷新；空状态提示
+  - 详情视图：汇总统计条 + 每台设备卡片（健康徽标/命令回显/判断依据/一键打开日志）
+  - 导出报告：生成内联 CSS 的 HTML 报告（健康色标 + 统计卡片 + 明细表），系统保存框导出 .html
+  - 删除历史：confirm 确认后删除并刷新列表
+- **验证**：npm run build 通过；cargo check 通过；dev 版截图确认 Tab / 历史空状态 / 规则列表 / 规则编辑器正常渲染
+
+---
+
+## 2026-09-07 · P2：故障规则自定义（静态规则 → 配置驱动）
+
+- **改动文件**：`src-tauri/src/batch_inspect.rs`（规则引擎改造）、`src-tauri/src/lib.rs`（命令注册）、`src/App.tsx`（规则编辑器）、`src/index.css`、`src/tauriBridge.ts`（sandbox mock）
+- **后端**：
+  - 新增 `InspectRuleConfig`（可序列化：id/vendor/commandContains/severity/type/keyword/missingKeyword/threshold/percent/label/enabled），原静态 `InspectRule` 表保留为内置默认源
+  - 规则存储：`%LOCALAPPDATA%/RainTerminal/inspect_rules.json`；首次启动自动写入内置规则（~35 条全量迁移）
+  - 全局规则缓存 `RULES_CACHE`（Mutex）：巡检启动时加载一次，保存规则时同步更新，评估不再每次读盘
+  - `assess_output` 改为遍历启用规则，按 type 分派（keyword 包含 / missing 缺失 / threshold 阈值+percent 百分比取值）
+  - 新增 `get_inspect_rules` / `save_inspect_rules`（保存时校验：厂商/等级/说明非空、等级仅 warn|critical、规则 ID 不重复）
+- **前端**：
+  - 故障规则 Tab：规则表格（厂商/匹配命令/判断方式/条件/等级/说明/启用/编辑/删除）+ 新增规则 + 保存规则
+  - 规则编辑器：适用厂商（Linux/华为/华三/锐捷/中兴/通用）、匹配命令包含、判断方式（关键词/缺失关键词/阈值）、阈值+按百分比、健康等级、判断说明、启用开关；应用修改先落本地列表，点"保存规则"一次性写盘生效
+  - 启用/停用、删除均为本地编辑，保存后生效并即时生效于下一次巡检
+- **验证**：npm run build 通过；cargo check 通过；dev 版截图确认规则列表与新增规则表单正常

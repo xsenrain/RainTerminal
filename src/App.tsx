@@ -253,6 +253,76 @@ type InspectDevice = {
 }
 
 const INSPECT_VENDORS = ['linux', 'huawei', 'h3c', 'ruijie', 'zte', 'other'] as const
+function buildInspectHtmlReport(record: InspectHistoryRecord): string {
+  const healthClass = (health: string) => (health === 'critical' ? 'h-crit' : health === 'warn' ? 'h-warn' : 'h-ok')
+  const healthLabel = (health: string) => (health === 'critical' ? '严重' : health === 'warn' ? '警告' : '正常')
+  const rows = record.results
+    .map((result) => {
+      const commands = result.outputs.map((o) => o.command).join(' | ')
+      const issues = result.outputs.flatMap((o) => o.issues).join('; ') || '-'
+      return `<tr>
+        <td>${escapeHtml(result.deviceName)}</td>
+        <td>${escapeHtml(result.host)}</td>
+        <td><span class="${healthClass(result.health)}">${healthLabel(result.health)}</span></td>
+        <td>${result.success ? '成功' : '失败'}</td>
+        <td>${(result.durationMs / 1000).toFixed(1)}s</td>
+        <td>${escapeHtml(commands)}</td>
+        <td>${escapeHtml(issues)}</td>
+        <td>${result.logPath ? escapeHtml(result.logPath) : '-'}</td>
+      </tr>`
+    })
+    .join('\n')
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>巡检报告 ${record.id}</title>
+<style>
+  body { font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; margin: 24px; color: #24292f; background: #fff; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #57606a; font-size: 13px; margin-bottom: 16px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+  .stat { border: 1px solid #d0d7de; border-radius: 8px; padding: 8px 14px; font-size: 13px; }
+  .stat b { font-size: 18px; display: block; }
+  .stat.crit b { color: #d1242f; }
+  .stat.warn b { color: #bf8700; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; }
+  .h-ok { color: #1a7f37; font-weight: 600; }
+  .h-warn { color: #bf8700; font-weight: 600; }
+  .h-crit { color: #d1242f; font-weight: 600; }
+  .note { color: #57606a; font-size: 12px; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>巡检报告</h1>
+  <div class="meta">RainTerminal 自动化巡检 · 记录 ID ${escapeHtml(record.id)} · ${escapeHtml(record.savedAt)}</div>
+  <div class="stats">
+    <div class="stat"><b>${record.meta.deviceCount}</b>设备</div>
+    <div class="stat"><b>${record.meta.commandCount}</b>命令</div>
+    <div class="stat"><b>${record.meta.successCount}</b>成功</div>
+    <div class="stat"><b>${record.meta.failCount}</b>失败</div>
+    <div class="stat crit"><b>${record.meta.criticalCount}</b>严重</div>
+    <div class="stat warn"><b>${record.meta.warnCount}</b>警告</div>
+  </div>
+  <table>
+    <thead><tr><th>设备名称</th><th>主机</th><th>健康状态</th><th>执行结果</th><th>耗时</th><th>命令</th><th>判断依据</th><th>日志文件</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="note">由 RainTerminal 自动化巡检生成</div>
+</body>
+</html>`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 
 type InspectCommandOutput = {
   command: string
@@ -272,6 +342,43 @@ type InspectExecResult = {
   health: 'ok' | 'warn' | 'critical' | string
   logPath?: string | null
 }
+
+type InspectHistoryMeta = {
+  id: string
+  savedAt: string
+  deviceCount: number
+  commandCount: number
+  successCount: number
+  failCount: number
+  criticalCount: number
+  warnCount: number
+  okCount: number
+}
+
+type InspectHistoryRecord = {
+  id: string
+  savedAt: string
+  meta: InspectHistoryMeta
+  results: InspectExecResult[]
+}
+
+type InspectRuleType = 'keyword' | 'missing' | 'threshold'
+
+type InspectRuleConfig = {
+  id: string
+  vendor: string
+  commandContains: string
+  severity: 'warn' | 'critical' | string
+  type: InspectRuleType
+  keyword?: string | null
+  missingKeyword?: string | null
+  threshold?: number | null
+  percent: boolean
+  label: string
+  enabled: boolean
+}
+
+type InspectWorkspaceView = 'workbench' | 'history' | 'rules'
 
 type DockPanel = 'servers' | 'local' | InspectorTab | null
 
@@ -3080,7 +3187,7 @@ function LiquidTitleBar({
         </div>
         <div>
           <h1>RainTerminal</h1>
-          <p>{t('服务器工作台')}</p>
+          <p>{t('一体化运维工作台')}</p>
         </div>
       </div>
 
@@ -10386,6 +10493,11 @@ function InspectWorkspace({
   const discardInspectResultRef = useRef(false)
   const [inspectLogDir, setInspectLogDir] = useState('')
   const [inspectLogDirBusy, setInspectLogDirBusy] = useState(false)
+  const [inspectView, setInspectView] = useState<InspectWorkspaceView>('workbench')
+  const [inspectHistory, setInspectHistory] = useState<InspectHistoryMeta[] | null>(null)
+  const [inspectHistoryDetail, setInspectHistoryDetail] = useState<InspectHistoryRecord | null>(null)
+  const [inspectRules, setInspectRules] = useState<InspectRuleConfig[] | null>(null)
+  const [inspectRuleDraft, setInspectRuleDraft] = useState<InspectRuleConfig | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -10505,6 +10617,8 @@ function InspectWorkspace({
       })
       if (discardInspectResultRef.current) return
       setInspectResults(results)
+      // P0：执行完成后自动保存到巡检历史（不阻塞界面，失败静默）
+      void invoke('save_inspect_history', { results }).catch(() => undefined)
     } catch (reason) {
       if (discardInspectResultRef.current) return
       const message = String(reason).replace(/^Error:\s*/i, '')
@@ -10611,6 +10725,24 @@ function InspectWorkspace({
 
   function healthLabel(health: string): string {
     return health === 'ok' ? t('正常') : health === 'warn' ? t('警告') : health === 'critical' ? t('严重') : health
+  }
+
+  function vendorLabel(vendor: string): string {
+    const map: Record<string, string> = {
+      linux: 'Linux',
+      huawei: t('华为'),
+      h3c: t('华三'),
+      ruijie: t('锐捷'),
+      zte: t('中兴'),
+      other: t('通用'),
+    }
+    return map[vendor] ?? vendor
+  }
+
+  function openInspectLogPath(path: string) {
+    void invoke('open_inspect_log_file', { path }).catch((reason) =>
+      onNotify(`打开日志失败：${String(reason).replace(/^Error:\s*/i, '')}`),
+    )
   }
 
   async function exportInspectResultsCsv() {
@@ -10737,6 +10869,137 @@ function InspectWorkspace({
       onNotify(`模板下载失败：${String(reason).replace(/^Error:\s*/i, '')}`)
     }
   }
+  async function loadInspectHistory() {
+    try {
+      const list = await invoke<InspectHistoryMeta[]>('list_inspect_history')
+      setInspectHistory(list)
+    } catch (reason) {
+      onNotify(`读取巡检历史失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function viewInspectHistory(id: string) {
+    try {
+      const record = await invoke<InspectHistoryRecord | null>('get_inspect_history', { id })
+      if (!record) {
+        onNotify(t('历史记录不存在或已被删除'))
+        return
+      }
+      setInspectHistoryDetail(record)
+    } catch (reason) {
+      onNotify(`读取历史详情失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function deleteInspectHistory(id: string) {
+    if (!window.confirm(t('确定删除这条巡检历史吗？'))) return
+    try {
+      const removed = await invoke<boolean>('delete_inspect_history', { id })
+      if (removed) onNotify(t('历史记录已删除'))
+      setInspectHistoryDetail(null)
+      void loadInspectHistory()
+    } catch (reason) {
+      onNotify(`删除历史失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function exportInspectHistoryHtml(record: InspectHistoryRecord) {
+    try {
+      const html = buildInspectHtmlReport(record)
+      const savedPath = await invoke<string | null>('save_text_export', {
+        suggestedName: `巡检报告-${record.id}.html`,
+        content: html,
+        filter: 'html',
+      })
+      if (savedPath) onNotify(`${t('报告已导出')}：${savedPath}`)
+    } catch (reason) {
+      onNotify(`导出报告失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  function openRuleEditor(rule?: InspectRuleConfig) {
+    setInspectRuleDraft(
+      rule
+        ? { ...rule }
+        : {
+            id: `rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            vendor: 'linux',
+            commandContains: '',
+            severity: 'warn',
+            type: 'keyword',
+            keyword: '',
+            missingKeyword: '',
+            threshold: 80,
+            percent: true,
+            label: '',
+            enabled: true,
+          },
+    )
+  }
+
+  function closeRuleEditor() {
+    setInspectRuleDraft(null)
+  }
+
+  async function loadInspectRules() {
+    try {
+      const list = await invoke<InspectRuleConfig[]>('get_inspect_rules')
+      setInspectRules(list)
+    } catch (reason) {
+      onNotify(`读取规则失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  async function saveInspectRules(next: InspectRuleConfig[]) {
+    try {
+      await invoke('save_inspect_rules', { rules: next })
+      setInspectRules(next)
+      onNotify(`${t('规则已保存')}（${next.length} 条生效）`)
+    } catch (reason) {
+      onNotify(`保存规则失败：${String(reason).replace(/^Error:\s*/i, '')}`)
+    }
+  }
+
+  function saveRuleDraft() {
+    if (!inspectRuleDraft) return
+    if (!inspectRuleDraft.vendor.trim() || !inspectRuleDraft.label.trim()) {
+      onNotify(t('厂商与说明不能为空'))
+      return
+    }
+    if (inspectRuleDraft.type === 'threshold' && (inspectRuleDraft.threshold === null || inspectRuleDraft.threshold === undefined || !Number.isFinite(inspectRuleDraft.threshold))) {
+      onNotify(t('阈值规则需要填写数值'))
+      return
+    }
+    if ((inspectRuleDraft.type === 'keyword' || inspectRuleDraft.type === 'missing') && !(inspectRuleDraft.keyword ?? '').trim() && !(inspectRuleDraft.missingKeyword ?? '').trim()) {
+      onNotify(t('关键词规则需要填写关键词'))
+      return
+    }
+    const next = [...(inspectRules ?? [])]
+    const index = next.findIndex((r) => r.id === inspectRuleDraft.id)
+    if (index >= 0) {
+      next[index] = { ...inspectRuleDraft }
+    } else {
+      next.push({ ...inspectRuleDraft })
+    }
+    setInspectRules(next)
+    setInspectRuleDraft(null)
+    onNotify(t('规则已修改，点击保存后生效'))
+  }
+
+  function deleteRule(rule: InspectRuleConfig) {
+    if (!inspectRules) return
+    const next = inspectRules.filter((r) => r.id !== rule.id)
+    setInspectRules(next)
+    onNotify(t('规则已移除，点击保存后生效'))
+  }
+
+  function toggleRuleEnabled(rule: InspectRuleConfig) {
+    if (!inspectRules) return
+    const next = inspectRules.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
+    setInspectRules(next)
+    onNotify(t('规则状态已修改，点击保存后生效'))
+  }
+
 
 
   function parseCsvRows(text: string): string[][] {
@@ -10818,6 +11081,20 @@ function InspectWorkspace({
           </button>
         </div>
       </header>
+
+      <div className="inspect-tabs">
+        <button type="button" className={`inspect-tab${inspectView === 'workbench' ? ' active' : ''}`} onClick={() => setInspectView('workbench')}>
+          {t('巡检工作台')}
+        </button>
+        <button type="button" className={`inspect-tab${inspectView === 'history' ? ' active' : ''}`} onClick={() => { setInspectView('history'); void loadInspectHistory() }}>
+          {t('巡检历史')}
+        </button>
+        <button type="button" className={`inspect-tab${inspectView === 'rules' ? ' active' : ''}`} onClick={() => { setInspectView('rules'); void loadInspectRules() }}>
+          {t('故障规则')}
+        </button>
+      </div>
+      {inspectView === 'workbench' && (
+        <>
 
       <div className="inspect-workspace-body">
         <div className="inspect-device-pane">
@@ -11182,6 +11459,271 @@ function InspectWorkspace({
             </div>
           </div>
         </section>
+      )}
+        </>
+      )}
+
+      {inspectView === 'history' && (
+        inspectHistoryDetail ? (
+          <div className="inspect-history-detail">
+            <div className="inspect-history-detail-header">
+              <button className="utility-text-button compact" type="button" onClick={() => setInspectHistoryDetail(null)}>
+                <ChevronLeft size={13} />
+                {t('返回列表')}
+              </button>
+              <div className="inspect-history-detail-title">
+                <strong>{t('巡检历史')} · {inspectHistoryDetail.id}</strong>
+                <span>{inspectHistoryDetail.savedAt}</span>
+              </div>
+              <div className="inspect-workspace-actions">
+                <button className="utility-text-button compact" type="button" onClick={() => void exportInspectHistoryHtml(inspectHistoryDetail)}>
+                  <Download size={13} />
+                  {t('导出报告')}
+                </button>
+                <button className="utility-text-button danger compact" type="button" onClick={() => void deleteInspectHistory(inspectHistoryDetail.id)}>
+                  <Trash2 size={13} />
+                  {t('删除')}
+                </button>
+              </div>
+            </div>
+            <div className="inspect-history-stats">
+              <span className="inspect-stat-chip">{t('设备')} {inspectHistoryDetail.meta.deviceCount}</span>
+              <span className="inspect-stat-chip">{t('命令')} {inspectHistoryDetail.meta.commandCount}</span>
+              <span className="inspect-stat-chip ok">{t('成功')} {inspectHistoryDetail.meta.successCount}</span>
+              <span className="inspect-stat-chip err">{t('失败')} {inspectHistoryDetail.meta.failCount}</span>
+              <span className="inspect-stat-chip crit">{t('严重')} {inspectHistoryDetail.meta.criticalCount}</span>
+              <span className="inspect-stat-chip warn">{t('警告')} {inspectHistoryDetail.meta.warnCount}</span>
+            </div>
+            <div className="inspect-history-devices">
+              {inspectHistoryDetail.results.map((result) => (
+                <details key={result.host + result.deviceName} className="inspect-result-item" open>
+                  <summary>
+                    <span className={`inspect-health-badge ${result.health}`}>{healthLabel(result.health)}</span>
+                    <strong>{result.deviceName}</strong>
+                    <span className="inspect-result-meta">
+                      {result.host} · {result.success ? t('连接成功') : t('连接失败')} · {(result.durationMs / 1000).toFixed(1)}s
+                    </span>
+                    {result.logPath && (
+                      <button className="utility-text-button compact" type="button" onClick={(event) => { event.preventDefault(); if (result.logPath) void openInspectLogPath(result.logPath) }}>
+                        <FolderOpen size={12} />
+                        {t('打开日志')}
+                      </button>
+                    )}
+                  </summary>
+                  {result.error && <div className="inspect-result-error">{result.error}</div>}
+                  <div className="inspect-result-outputs">
+                    {result.outputs.map((output, index) => (
+                      <div key={index} className="inspect-result-command">
+                        <div className="inspect-result-command-head">
+                          <code>{output.command}</code>
+                          {output.issues.length > 0 && (
+                            <em className="inspect-command-issues">{output.issues.map((issue) => `⚠ ${issue}`).join(' · ')}</em>
+                          )}
+                        </div>
+                        <pre>{output.output || t('（无输出）')}</pre>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="inspect-history-list">
+            <div className="inspect-history-list-header">
+              <strong>{t('巡检历史')}</strong>
+              <span>{t('每次巡检完成后自动保存，重启软件不丢失')}</span>
+              <button className="utility-text-button compact" type="button" onClick={() => void loadInspectHistory()}>
+                <RefreshCw size={13} />
+                {t('刷新')}
+              </button>
+            </div>
+            {!inspectHistory ? (
+              <div className="inspect-empty">{t('加载中…')}</div>
+            ) : inspectHistory.length === 0 ? (
+              <div className="inspect-empty">{t('暂无巡检历史，执行一次巡检后会自动保存')}</div>
+            ) : (
+              <table className="inspect-history-table">
+                <thead>
+                  <tr>
+                    <th>{t('记录 ID')}</th>
+                    <th>{t('时间')}</th>
+                    <th>{t('设备')}</th>
+                    <th>{t('命令')}</th>
+                    <th>{t('成功/失败')}</th>
+                    <th>{t('严重/警告')}</th>
+                    <th>{t('操作')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectHistory.map((meta) => (
+                    <tr key={meta.id}>
+                      <td className="mono">{meta.id}</td>
+                      <td>{meta.savedAt}</td>
+                      <td>{meta.deviceCount}</td>
+                      <td>{meta.commandCount}</td>
+                      <td>{meta.successCount} / {meta.failCount}</td>
+                      <td>
+                        <span className={`inspect-history-count${meta.criticalCount > 0 ? ' crit' : ''}`}>{meta.criticalCount}</span>
+                        <span className={`inspect-history-count${meta.warnCount > 0 ? ' warn' : ''}`}>{meta.warnCount}</span>
+                      </td>
+                      <td>
+                        <button className="utility-text-button compact" type="button" onClick={() => void viewInspectHistory(meta.id)}>{t('查看')}</button>
+                        <button className="utility-text-button danger compact" type="button" onClick={() => void deleteInspectHistory(meta.id)}>{t('删除')}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )
+      )}
+
+      {inspectView === 'rules' && (
+        <div className="inspect-rules-pane">
+          <div className="inspect-rules-header">
+            <div className="inspect-rules-header-text">
+              <strong>{t('故障判断规则')}</strong>
+              <span>{t('规则按厂商与命令匹配，支持关键词 / 缺失关键词 / 数值阈值三种判断方式')}</span>
+            </div>
+            <div className="inspect-workspace-actions">
+              <button className="utility-primary-button compact" type="button" onClick={() => openRuleEditor()}>
+                <Plus size={13} />
+                {t('新增规则')}
+              </button>
+              <button className="utility-primary-button compact" type="button" onClick={() => void saveInspectRules(inspectRules ?? [])}>
+                <Save size={13} />
+                {t('保存规则')}
+              </button>
+            </div>
+          </div>
+          {inspectRuleDraft && (
+            <div className="inspect-rule-editor">
+              <div className="inspect-rule-editor-title">
+                <strong>{inspectRules?.some((r) => r.id === inspectRuleDraft.id) ? t('编辑规则') : t('新增规则')}</strong>
+                <button className="utility-text-button compact" type="button" onClick={closeRuleEditor}>
+                  <X size={13} />
+                  {t('关闭')}
+                </button>
+              </div>
+              <div className="inspect-rule-form">
+                <label>
+                  <span>{t('适用厂商')}</span>
+                  <select value={inspectRuleDraft.vendor} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, vendor: event.target.value })}>
+                    <option value="linux">Linux</option>
+                    <option value="huawei">华为</option>
+                    <option value="h3c">华三</option>
+                    <option value="ruijie">锐捷</option>
+                    <option value="zte">中兴</option>
+                    <option value="other">通用</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('匹配命令包含')}</span>
+                  <input value={inspectRuleDraft.commandContains} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, commandContains: event.target.value })} placeholder={t('如 df -h 或 display version')} />
+                </label>
+                <label>
+                  <span>{t('判断方式')}</span>
+                  <select value={inspectRuleDraft.type} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, type: event.target.value as InspectRuleType })}>
+                    <option value="keyword">{t('输出包含关键词')}</option>
+                    <option value="missing">{t('输出缺少关键词')}</option>
+                    <option value="threshold">{t('数值超过阈值')}</option>
+                  </select>
+                </label>
+                {(inspectRuleDraft.type === 'keyword' || inspectRuleDraft.type === 'missing') && (
+                  <label>
+                    <span>{inspectRuleDraft.type === 'keyword' ? t('命中关键词') : t('缺失关键词')}</span>
+                    <input
+                      value={inspectRuleDraft.type === 'keyword' ? (inspectRuleDraft.keyword ?? '') : (inspectRuleDraft.missingKeyword ?? '')}
+                      onChange={(event) =>
+                        setInspectRuleDraft(
+                          inspectRuleDraft.type === 'keyword'
+                            ? { ...inspectRuleDraft, keyword: event.target.value }
+                            : { ...inspectRuleDraft, missingKeyword: event.target.value },
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                {inspectRuleDraft.type === 'threshold' && (
+                  <>
+                    <label>
+                      <span>{t('阈值')}</span>
+                      <input type="number" value={inspectRuleDraft.threshold ?? 80} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, threshold: Number(event.target.value) })} />
+                    </label>
+                    <label className="inspect-rule-check">
+                      <input type="checkbox" checked={inspectRuleDraft.percent} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, percent: event.target.checked })} />
+                      <span>{t('按百分比取值（使用率类规则）')}</span>
+                    </label>
+                  </>
+                )}
+                <label>
+                  <span>{t('健康等级')}</span>
+                  <select value={inspectRuleDraft.severity} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, severity: event.target.value })}>
+                    <option value="warn">{t('警告')}</option>
+                    <option value="critical">{t('严重')}</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('判断说明')}</span>
+                  <input value={inspectRuleDraft.label} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, label: event.target.value })} placeholder={t('命中后显示的原因，如 磁盘使用率过高')} />
+                </label>
+                <label className="inspect-rule-check">
+                  <input type="checkbox" checked={inspectRuleDraft.enabled} onChange={(event) => setInspectRuleDraft({ ...inspectRuleDraft, enabled: event.target.checked })} />
+                  <span>{t('启用该规则')}</span>
+                </label>
+              </div>
+              <div className="inspect-rule-editor-actions">
+                <button className="utility-primary-button compact" type="button" onClick={saveRuleDraft}>{t('应用修改')}</button>
+                <button className="utility-text-button compact" type="button" onClick={closeRuleEditor}>{t('取消')}</button>
+              </div>
+            </div>
+          )}
+          {!inspectRules ? (
+            <div className="inspect-empty">{t('加载中…')}</div>
+          ) : (
+            <div className="inspect-rules-table-wrap">
+              <table className="inspect-history-table inspect-rules-table">
+                <thead>
+                  <tr>
+                    <th>{t('厂商')}</th>
+                    <th>{t('匹配命令')}</th>
+                    <th>{t('判断方式')}</th>
+                    <th>{t('条件')}</th>
+                    <th>{t('等级')}</th>
+                    <th>{t('说明')}</th>
+                    <th>{t('启用')}</th>
+                    <th>{t('操作')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectRules.map((rule) => (
+                    <tr key={rule.id} className={rule.enabled ? '' : 'rule-disabled'}>
+                      <td>{vendorLabel(rule.vendor)}</td>
+                      <td className="mono">{rule.commandContains || '-'}</td>
+                      <td>{rule.type === 'keyword' ? t('包含关键词') : rule.type === 'missing' ? t('缺失关键词') : t('数值阈值')}</td>
+                      <td className="mono">
+                        {rule.type === 'keyword' ? (rule.keyword ?? '-') : rule.type === 'missing' ? (rule.missingKeyword ?? '-') : `${rule.threshold ?? '-'}${rule.percent ? '%' : ''}`}
+                      </td>
+                      <td>
+                        <span className={`inspect-health-badge ${rule.severity}`}>{rule.severity === 'critical' ? t('严重') : t('警告')}</span>
+                      </td>
+                      <td>{rule.label}</td>
+                      <td>
+                        <input type="checkbox" checked={rule.enabled} onChange={() => toggleRuleEnabled(rule)} />
+                      </td>
+                      <td>
+                        <button className="utility-text-button compact" type="button" onClick={() => openRuleEditor(rule)}>{t('编辑')}</button>
+                        <button className="utility-text-button danger compact" type="button" onClick={() => deleteRule(rule)}>{t('删除')}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </section>
   )
@@ -12312,7 +12854,7 @@ function SettingsModal({
                       <h3>RainTerminal</h3>
                       <span>v{updateResult?.currentVersion ?? APP_VERSION}</span>
                     </div>
-                    <p>{t('面向 Windows 的一体化服务器工作台，将终端、文件、监控、进程与远程桌面集中在可持久化工作区中。')}</p>
+                    <p>{t('面向 Windows 的一体化运维工作台，将终端、文件、监控、进程、远程桌面与自动化巡检集中在可持久化工作区中。')}</p>
                     <div className="about-capabilities" aria-label={t('核心能力')}>
                       <span>{t('SSH 终端')}</span>
                       <span>{t('文件管理')}</span>

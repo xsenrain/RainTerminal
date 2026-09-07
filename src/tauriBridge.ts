@@ -211,6 +211,34 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       return undefined as T
     case 'pick_inspect_log_dir':
       return null as T
+    case 'open_inspect_log_file':
+      return undefined as T
+    case 'save_inspect_history':
+      return `mock-${Date.now()}` as T
+    case 'list_inspect_history':
+      return [] as T
+    case 'get_inspect_history':
+      return null as T
+    case 'delete_inspect_history':
+      return true as T
+    case 'get_inspect_rules':
+      return [
+        {
+          id: 'builtin-0',
+          vendor: 'linux',
+          commandContains: 'df -h',
+          severity: 'warn',
+          type: 'threshold',
+          keyword: null,
+          missingKeyword: null,
+          threshold: 80,
+          percent: true,
+          label: '磁盘使用率过高',
+          enabled: true,
+        },
+      ] as T
+    case 'save_inspect_rules':
+      return undefined as T
     case 'check_app_update': {
       const available = Boolean((window as typeof window & { __XUNDU_SANDBOX_UPDATE_AVAILABLE__?: boolean }).__XUNDU_SANDBOX_UPDATE_AVAILABLE__)
       return available

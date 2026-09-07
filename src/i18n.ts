@@ -279,7 +279,7 @@ const englishUi: Record<string, string> = {
   '深蓝墨色与电光青，强调沉浸、专注和代码层级。': 'Midnight blue ink and electric cyan for immersion, focus, and code hierarchy.',
   '低饱和樱粉与灰紫雾面，柔和但不牺牲对比度。': 'Muted sakura pink and mauve haze with softness that keeps strong contrast.',
   '深林绿与苔藓微光，稳定、安静，适合监控工作流。': 'Deep forest greens and moss light for calm, stable monitoring workflows.',
-  '面向 Windows 的一体化服务器工作台，将终端、文件、监控、进程与远程桌面集中在可持久化工作区中。': 'An integrated Windows server workspace that brings terminals, files, monitoring, processes, and remote desktops into persistent workspaces.',
+  '面向 Windows 的一体化运维工作台，将终端、文件、监控、进程、远程桌面与自动化巡检集中在可持久化工作区中。': 'An integrated Windows O&M workbench that brings terminals, files, monitoring, processes, remote desktop and automated inspection together in a persistent workspace.',
   '核心能力': 'Core capabilities',
   'SSH 终端': 'SSH terminal',
   '监控与进程': 'Monitoring & processes',
