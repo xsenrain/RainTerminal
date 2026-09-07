@@ -405,3 +405,15 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - CSV 表格导入不再把非内置厂商强制回退为 linux，保留导入的原厂商值
   - 规则编辑器新增规则默认厂商取列表第一个
 - **验证**：npm run build 通过（无 TS 错误）
+
+
+---
+
+## 2026-09-07 · 修复：编辑设备表单布局错乱
+
+- **改动文件**：`src/App.tsx`、`src/index.css`
+- **改动内容**：
+  - 编辑设备表单两列宽窄不一（左列被内容撑窄、右列过宽）、厂商下拉挤在端口行、输入框不对齐
+  - 修复：`.inspect-device-form` 改用 `repeat(2, minmax(0, 1fr))` 强制等宽两列；label 加 `min-width: 0`；input/select 加 `width: 100%; min-width: 0`，杜绝内容撑破列宽
+  - 厂商下拉 label 加空 span 占位（`::before` 填充空格保持行高），与其他字段顶部文字对齐；不显示"厂商"文字（符合上轮要求）
+- **验证**：npm run build 通过

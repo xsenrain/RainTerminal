@@ -11217,6 +11217,7 @@ function InspectWorkspace({
                   <input type="number" min={1} max={65535} value={inspectDraft.port} onChange={(e) => setInspectDraft({ ...inspectDraft, port: Number(e.target.value) || 22 })} />
                 </label>
                 <label>
+                  <span aria-hidden="true" />
                   <select value={inspectDraft.vendor} onChange={(e) => setInspectDraft({ ...inspectDraft, vendor: e.target.value })}>
                     {inspectVendors.map((vendor) => (
                       <option key={vendor} value={vendor}>{vendor}</option>

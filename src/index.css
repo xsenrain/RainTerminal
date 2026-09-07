@@ -6764,7 +6764,7 @@ body.native-window-drag-active .monitor-tabs button {
 
 .inspect-device-form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -6774,11 +6774,14 @@ body.native-window-drag-active .monitor-tabs button {
   gap: 3px;
   font-size: 10.5px;
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .inspect-device-form label input,
 .inspect-device-form label select {
   height: 30px;
+  width: 100%;
+  min-width: 0;
   padding: 0 8px;
   border: 1px solid var(--border-medium);
   border-radius: var(--r-sm);
@@ -6786,6 +6789,10 @@ body.native-window-drag-active .monitor-tabs button {
   color: var(--text-primary);
   font-size: 11.5px;
   box-sizing: border-box;
+}
+
+.inspect-device-form label span:empty::before {
+  content: '\00a0';
 }
 
 .inspect-device-form label input:focus,
