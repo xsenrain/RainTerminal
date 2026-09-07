@@ -10416,7 +10416,11 @@ function InspectWorkspace({
   async function browseInspectLogDir() {
     try {
       const picked = await invoke<string | null>('pick_inspect_log_dir')
-      if (picked) setInspectLogDir(picked)
+      if (!picked) return
+      // 选中目录后立即校验并写入配置，无需再手动点保存
+      const saved = await invoke<string>('set_inspect_log_dir', { path: picked })
+      setInspectLogDir(saved)
+      onNotify(t('巡检日志保存路径已更新'))
     } catch (reason) {
       onNotify(String(reason).replace(/^Error:\s*/i, ''))
     }
@@ -11035,7 +11039,7 @@ function InspectWorkspace({
               {t('浏览…')}
             </button>
             <button className="utility-text-button" type="button" onClick={() => void saveInspectLogDir()} disabled={inspectLogDirBusy}>
-              {t('保存')}
+              {t('应用路径')}
             </button>
             <button className="utility-text-button" type="button" onClick={() => void openInspectLogDir()}>
               {t('打开目录')}

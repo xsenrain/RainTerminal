@@ -177,7 +177,6 @@ fn execute_device_with_retry(
     let file_path = inspect_log_file_path(log_dir, device);
     let mut log: Vec<String> = Vec::new();
     log.push("================================================================".to_string());
-    log.push("RainTerminal 巡检日志（连接 → 执行 → 断开 全程流水）".to_string());
     log.push(format!(
         "设备: {} | 地址: {}:{} | 厂商: {}",
         device.name, device.host, device.port, device.vendor
@@ -311,8 +310,24 @@ fn now_time() -> String {
     Local::now().format("%H:%M:%S").to_string()
 }
 
-/// 日志文件名：inspect_设备名_YYYYMMDD_HHMMSS.log（设备名清洗非法字符）。
+/// 日志文件名：inspect_IP_设备名_YYYYMMDD_HHMMSS.log（IP 与设备名清洗非法字符）。
 fn inspect_log_file_path(log_dir: &Path, device: &InspectDeviceInput) -> PathBuf {
+    let safe_host: String = device
+        .host
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe_host = if safe_host.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        safe_host
+    };
     let safe_name: String = device
         .name
         .chars()
@@ -330,7 +345,8 @@ fn inspect_log_file_path(log_dir: &Path, device: &InspectDeviceInput) -> PathBuf
         safe_name
     };
     log_dir.join(format!(
-        "inspect_{}_{}.log",
+        "inspect_{}_{}_{}.log",
+        safe_host,
         safe_name,
         Local::now().format("%Y%m%d_%H%M%S")
     ))
@@ -673,7 +689,7 @@ pub fn get_inspect_log_dir(app: AppHandle) -> Result<String, String> {
     Ok(resolve_inspect_log_dir(&app).display().to_string())
 }
 
-/// 设置巡检日志保存路径（自动创建目录并持久化）。
+/// 设置巡检日志保存路径（要求目录已存在，不存在则拒绝写入配置）。
 #[tauri::command]
 pub fn set_inspect_log_dir(app: AppHandle, path: String) -> Result<String, String> {
     let trimmed = path.trim().to_string();
@@ -681,7 +697,10 @@ pub fn set_inspect_log_dir(app: AppHandle, path: String) -> Result<String, Strin
         return Err("日志保存路径不能为空".to_string());
     }
     let dir = PathBuf::from(&trimmed);
-    fs::create_dir_all(&dir).map_err(|error| format!("无法创建日志目录: {error}"))?;
+    let metadata = fs::metadata(&dir).map_err(|error| format!("目录不存在或无法访问: {error}"))?;
+    if !metadata.is_dir() {
+        return Err("指定路径不是目录".to_string());
+    }
     let config = serde_json::json!({ "log_dir": dir.display().to_string() });
     let config_path = inspect_config_path(&app);
     if let Some(parent) = config_path.parent() {
