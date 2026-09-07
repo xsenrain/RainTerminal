@@ -6552,7 +6552,7 @@ body.native-window-drag-active .monitor-tabs button {
 }
 
 .inspect-concurrency input {
-  width: 46px;
+  width: 68px;
   height: 28px;
   padding: 0 6px;
   border: 1px solid var(--border-medium);

@@ -253,3 +253,10 @@
   - 后端 clamp(1,200) 保留作防呆兜底
 - **验证**：npm run build 通过
 - **commit**：待提交
+
+## 2026-09-07 · 并发输入框加宽
+
+- **背景**：用户反馈并发编辑框宽度过窄，200 显示不全
+- **改动**：index.css .inspect-concurrency input 宽度 46px → 68px
+- **验证**：npm run build 通过
+- **commit**：待提交
