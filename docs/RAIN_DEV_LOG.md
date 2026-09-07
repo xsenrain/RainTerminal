@@ -301,3 +301,13 @@
 3. **日志文件名加 IP**：inspect_设备名_时间戳.log → inspect_IP_设备名_时间戳.log（IP 中的点保留，非法字符替换为下划线）。
 4. **去掉日志标题行**：删除"RainTerminal 巡检日志（连接 → 执行 → 断开 全程流水）"这一行，日志直接从分隔线+设备信息开始。
 - 验证：cargo check（无警告）+ npm run build 通过
+
+### 2026-09-07 · 批量导入功能（JSON 巡检任务文件）
+- 自动化页面新增"批量导入"按钮（在"从 CSV 导入设备"左侧）
+- 导入 JSON 任务文件，一个文件同时包含：
+  - devices：设备列表（name/host/port/username/password/vendor/remark），按 host 去重，已存在跳过
+  - commands：要执行的命令列表（name/command），导入后替换当前命令列表
+  - concurrency：并发数（可选，1-200 自动夹取）
+  - logDir：日志保存路径（可选，目录无效提示但不中断导入）
+- 导入完成提示汇总：设备数/命令数/跳过数/并发/日志路径应用情况
+- 验证：npm run build 通过（纯前端功能，无后端改动）
