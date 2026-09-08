@@ -1,5 +1,7 @@
 // Telnet 终端会话：标准 IAC 协商（NAWS/TTYPE/ECHO/SGA），适用于网络设备与 Linux
-use crate::session_log::{session_log_close, session_log_open, session_log_write_bytes};
+use crate::session_log::{
+    session_log_close, session_log_note_input, session_log_open, session_log_write_bytes,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -457,6 +459,7 @@ pub fn telnet_session_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    session_log_note_input(&session_id);
     let handle = {
         let guard = state
             .sessions

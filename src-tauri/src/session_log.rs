@@ -6,6 +6,7 @@ use std::{
     io::Write,
     path::PathBuf,
     sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 struct SessionLogEntry {
@@ -15,6 +16,10 @@ struct SessionLogEntry {
     pending: Vec<u8>,
     /// 刚收到 \r，等待下一字节判定是 CRLF 换行还是回行首覆盖
     after_cr: bool,
+    /// 是否处于"用户输入行"：仅输入行做退格/回车消化，服务端输出原样全记录
+    input_active: bool,
+    /// 最近一次用户输入时刻（超时自动结束输入行）
+    last_input_at: Option<Instant>,
 }
 
 static SESSION_LOGS: OnceLock<Mutex<HashMap<String, SessionLogEntry>>> = OnceLock::new();
@@ -148,9 +153,21 @@ pub fn session_log_open(
             path: Some(path.clone()),
             pending: Vec::new(),
             after_cr: false,
+            input_active: false,
+            last_input_at: None,
         },
     );
     Ok(())
+}
+
+/// 用户输入发生时调用：标记当前会话进入"输入行"模式
+pub fn session_log_note_input(session_id: &str) {
+    if let Ok(mut guard) = registry().lock() {
+        if let Some(entry) = guard.get_mut(session_id) {
+            entry.input_active = true;
+            entry.last_input_at = Some(Instant::now());
+        }
+    }
 }
 
 /// 按 UTF-8 字符边界删除行缓冲末尾一个字符（退格语义）
@@ -184,44 +201,72 @@ fn pop_pending_char(pending: &mut Vec<u8>) {
     }
 }
 
-/// 行消化：把剥离 ANSI 后的字节流写入日志，退格删除前一字符，
-/// CRLF 视为换行、单独 CR 视为回行首覆盖，最终只保留真实行内容。
+/// 行消化：仅"用户输入行"做退格/回车消化（输错重输只留最终命令），
+/// 服务端输出原样全部记录。输入行超时 3 秒无新输入则自动结束。
 fn digest_line_bytes(entry: &mut SessionLogEntry, clean: &[u8]) {
     let file = match entry.file.as_mut() {
         Some(file) => file,
         None => return,
     };
     let mut out = Vec::with_capacity(clean.len() + 32);
-    let mut i = 0;
-    while i < clean.len() {
-        let b = clean[i];
-        if entry.after_cr {
+
+    // 输入行超时自动结束，未换行的残留内容按原样落盘
+    if entry.input_active {
+        let expired = entry
+            .last_input_at
+            .map(|t| t.elapsed() > Duration::from_secs(3))
+            .unwrap_or(false);
+        if expired {
+            if !entry.pending.is_empty() {
+                out.extend_from_slice(&entry.pending);
+                entry.pending.clear();
+            }
+            entry.input_active = false;
             entry.after_cr = false;
-            if b == b'\n' {
-                if !entry.pending.is_empty() {
-                    out.extend_from_slice(&entry.pending);
-                    entry.pending.clear();
-                }
-                out.push(b'\n');
-                i += 1;
-                continue;
-            }
-            entry.pending.clear(); // 单独 CR：回行首覆盖当前行
         }
-        match b {
-            0x08 => pop_pending_char(&mut entry.pending),
-            0x0d => entry.after_cr = true,
-            0x0a => {
-                if !entry.pending.is_empty() {
-                    out.extend_from_slice(&entry.pending);
-                    entry.pending.clear();
-                }
-                out.push(b'\n');
-            }
-            _ => entry.pending.push(b),
-        }
-        i += 1;
     }
+
+    if !entry.input_active {
+        // 服务端输出：原样全部记录（ANSI 控制序列已在 strip 阶段清理）
+        if !clean.is_empty() {
+            out.extend_from_slice(clean);
+        }
+    } else {
+        // 用户输入行：退格删字符、回车换行落地，最终只保留净命令行
+        let mut i = 0;
+        while i < clean.len() {
+            let b = clean[i];
+            if entry.after_cr {
+                entry.after_cr = false;
+                if b == b'\n' {
+                    if !entry.pending.is_empty() {
+                        out.extend_from_slice(&entry.pending);
+                        entry.pending.clear();
+                    }
+                    out.push(b'\n');
+                    entry.input_active = false; // 回车结束输入行
+                    i += 1;
+                    continue;
+                }
+                entry.pending.clear(); // 单独 CR：回行首覆盖当前行
+            }
+            match b {
+                0x08 => pop_pending_char(&mut entry.pending),
+                0x0d => entry.after_cr = true,
+                0x0a => {
+                    if !entry.pending.is_empty() {
+                        out.extend_from_slice(&entry.pending);
+                        entry.pending.clear();
+                    }
+                    out.push(b'\n');
+                    entry.input_active = false; // 回车结束输入行
+                }
+                _ => entry.pending.push(b),
+            }
+            i += 1;
+        }
+    }
+
     if !out.is_empty() {
         let _ = file.write_all(&out);
         let _ = file.flush();
@@ -295,61 +340,70 @@ mod tests {
                 path: Some(path.clone()),
                 pending: Vec::new(),
                 after_cr: false,
+                input_active: false,
+                last_input_at: None,
             },
             dir,
         )
     }
 
+    fn entry_content(dir: &PathBuf) -> String {
+        std::fs::read_to_string(dir.join("t.log")).unwrap()
+    }
+
     #[test]
-    fn digest_backspace_retry() {
-        let (mut entry, dir) = make_entry("bs");
+    fn input_backspace_retry() {
+        // 用户输入行：输错退格重输只留最终命令
+        let (mut entry, dir) = make_entry("ib");
+        entry.input_active = true;
         digest_line_bytes(
             &mut entry,
             b"swap-s\x08\x08\x08\x08\x08\x08swapon --show\r\n",
         );
-        // 模拟 close 冲刷未换行内容
-        let mut f = entry.file.take().unwrap();
-        f.write_all(&entry.pending).unwrap();
-        let path = dir.join("t.log");
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "swapon --show\n");
+        assert_eq!(entry_content(&dir), "swapon --show\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn digest_cr_overwrite() {
-        let (mut entry, dir) = make_entry("cr");
+    fn server_output_kept_verbatim() {
+        // 服务端输出：含 \r 与 \x08 也原样全记录
+        let (mut entry, dir) = make_entry("sv");
         digest_line_bytes(&mut entry, b"progress 50%\rprogress 100%\r\n");
-        let mut f = entry.file.take().unwrap();
-        f.write_all(&entry.pending).unwrap();
-        let path = dir.join("t.log");
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "progress 100%\n");
+        digest_line_bytes(&mut entry, b"odd\x08byte\r\n");
+        assert_eq!(
+            entry_content(&dir),
+            "progress 50%\rprogress 100%\r\nodd\x08byte\r\n"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn digest_crlf_split_chunks() {
-        let (mut entry, dir) = make_entry("sp");
+    fn server_output_crlf_split_chunks() {
+        let (mut entry, dir) = make_entry("sc");
         digest_line_bytes(&mut entry, b"total 116\r");
         digest_line_bytes(&mut entry, b"\n");
-        let mut f = entry.file.take().unwrap();
-        f.write_all(&entry.pending).unwrap();
-        let path = dir.join("t.log");
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "total 116\n");
+        assert_eq!(entry_content(&dir), "total 116\r\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn digest_utf8_backspace() {
-        let (mut entry, dir) = make_entry("u8");
+    fn input_utf8_backspace() {
+        let (mut entry, dir) = make_entry("iu");
+        entry.input_active = true;
         digest_line_bytes(&mut entry, "中文\x08文\r\n".as_bytes());
-        let mut f = entry.file.take().unwrap();
-        f.write_all(&entry.pending).unwrap();
-        let path = dir.join("t.log");
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "中文\n");
+        assert_eq!(entry_content(&dir), "中文\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn input_expire_flushes_then_verbatim() {
+        // 输入行超时后：残留落盘，后续按服务端输出原样记录
+        let (mut entry, dir) = make_entry("ie");
+        entry.input_active = true;
+        entry.last_input_at = Some(Instant::now() - Duration::from_secs(10));
+        digest_line_bytes(&mut entry, b"ls");
+        digest_line_bytes(&mut entry, b"-al\r\n");
+        assert_eq!(entry_content(&dir), "ls-al\r\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

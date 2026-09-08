@@ -5557,6 +5557,7 @@ fn parse_netdev(netdev: &str) -> (u64, u64) {
 
 #[tauri::command]
 fn ssh_write(state: State<SshSessions>, session_id: String, data: String) -> Result<(), String> {
+    session_log::session_log_note_input(&session_id);
     let handle = get_session_handle(&state.sessions, &session_id)?;
     handle
         .sender

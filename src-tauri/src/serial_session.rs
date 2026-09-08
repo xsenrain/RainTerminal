@@ -1,5 +1,7 @@
 // Serial 串口终端会话：本地设备 console 口连接
-use crate::session_log::{session_log_close, session_log_open, session_log_write_bytes};
+use crate::session_log::{
+    session_log_close, session_log_note_input, session_log_open, session_log_write_bytes,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -349,6 +351,7 @@ pub fn serial_session_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    session_log_note_input(&session_id);
     let handle = {
         let guard = state
             .sessions
