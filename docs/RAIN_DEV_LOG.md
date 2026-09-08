@@ -1196,3 +1196,15 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 更新弹窗移除"查看发布说明"/"前往仓库"按钮（openExternalUrl 函数、externalLinkFeedback、ExternalLink 导入一并清理，tsc 零错误）
 - 用户安装包显示 1.0.2 是旧包；源码版本已为 1.0.3
 - 重新构建 1.0.3（含 netstat 弹窗修复），替换 GitHub release v1.0.3 安装包资产，更新 latest.json
+
+---
+
+## 2026-09-08 · 修复版本显示仍为1.0.2（三处版本不一致）
+
+现象：更新后设置页仍显示 1.0.2（dev/正式版均如此）
+根因：版本号分散在三个文件，此前只改了 package.json 与 tauri.conf.json
+- src-tauri/Cargo.toml 仍为 1.0.2 —— 后端 env!("CARGO_PKG_VERSION") 读它，更新检查 currentVersion 全错
+- src/App.tsx 前端硬编码 const APP_VERSION = '1.0.2' 兜底显示
+修复：Cargo.toml → 1.0.3，APP_VERSION → '1.0.3'，Cargo.lock 随构建自动同步
+验证：app.exe 与 setup.exe FileVersion/ProductVersion 均 1.0.3
+教训：发版前必须三处同步（package.json / tauri.conf.json / Cargo.toml），前端 APP_VERSION 兜底值同步
