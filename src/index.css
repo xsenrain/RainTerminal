@@ -7674,14 +7674,14 @@ body.native-window-drag-active .monitor-tabs button {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
 }
 .inspect-tool-pane {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
 }
 .inspect-tool-pane .inspect-toolbox-card {
@@ -7886,11 +7886,11 @@ body.native-window-drag-active .monitor-tabs button {
   flex-direction: column;
 }
 .inspect-tool-panel {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
 }
 .inspect-tool-pane {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
 }
 .inspect-toolbox-card {
@@ -8005,4 +8005,11 @@ body.native-window-drag-active .monitor-tabs button {
 }
 .inspect-pwd-row button:hover {
   color: var(--accent, #0969da);
+}
+
+/* ============ 小工具：内容条件撑满（无数据矮，有数据铺满到底） ============ */
+.inspect-tool-panel.inspect-fill-pane,
+.inspect-tool-pane.inspect-fill-pane {
+  flex: 1 1 auto;
+  min-height: 0;
 }

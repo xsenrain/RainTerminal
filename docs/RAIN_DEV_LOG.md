@@ -1248,3 +1248,14 @@ MTR 路由追踪（mtr tab）：
   新增 .inspect-fill-card 条件类（有内容才 flex:1 撑满）
 - MtrTool：running/有跳数/错误时撑满；未开始保持矮
 - PasswordGenTool：生成密码后撑满；未生成保持矮
+
+---
+
+## 2026-09-08 · 全部小工具统一为条件撑满布局
+
+- 方案：panel/pane 默认自然高（flex:0 1 auto），有数据时加 inspect-fill-pane 才 flex:1 撑满
+- 通道：每个子组件新增 onContent 回调，useEffect 上报“是否有内容”，
+  InspectToolbox 用 toolHasData 记录并给当前 pane 加 inspect-fill-pane
+- 各工具条件：网段=scanning|有行|error；端口=scanning|scanned>0|error；
+  Ping=running|有summary|rounds>0|errors；子网=有result|error；MTR=running|有hops|error；密码=有passwords
+- 效果：无数据时页面自然矮，有数据卡片铺满到底内部滚动

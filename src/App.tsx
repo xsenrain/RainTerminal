@@ -10893,6 +10893,9 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const [discoverElapsed, setDiscoverElapsed] = useState(0)
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
+  const [toolHasData, setToolHasData] = useState<Record<string, boolean>>({})
+  const reportContent = (tool: string, has: boolean) =>
+    setToolHasData((prev) => (prev[tool] === has ? prev : { ...prev, [tool]: has }))
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
   const [activeTool, setActiveTool] = useState<'discover' | 'ports' | 'ping' | 'subnet' | 'mtr' | 'password'>('discover')
 
@@ -11000,8 +11003,8 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
       </div>
 
       <div className="inspect-tool-panel">
-        <div className="inspect-tool-pane" style={{ display: activeTool === 'discover' ? 'flex' : 'none' }}>
-          <div className="inspect-toolbox-card">
+        <div className={`inspect-tool-pane${discoverScanning || Object.keys(discoverRows).length > 0 || discoverError ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'discover' ? 'flex' : 'none' }}>
+          <div className={`inspect-toolbox-card${discoverScanning || Object.keys(discoverRows).length > 0 || discoverError ? ' inspect-fill-card' : ''}`}>
             <div className="inspect-toolbox-card-head">
               <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
@@ -11131,20 +11134,20 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
           )}
             </div>
           </div>
-          <div className="inspect-tool-pane" style={{ display: activeTool === 'ports' ? 'flex' : 'none' }}>
-            <PortScanTool onNotify={onNotify} />
+          <div className={`inspect-tool-pane${toolHasData['ports'] ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'ports' ? 'flex' : 'none' }}>
+            <PortScanTool onNotify={onNotify} onContent={(v) => reportContent('ports', v)} />
           </div>
-          <div className="inspect-tool-pane" style={{ display: activeTool === 'ping' ? 'flex' : 'none' }}>
-            <PingTool onNotify={onNotify} />
+          <div className={`inspect-tool-pane${toolHasData['ping'] ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'ping' ? 'flex' : 'none' }}>
+            <PingTool onNotify={onNotify} onContent={(v) => reportContent('ping', v)} />
           </div>
-          <div className="inspect-tool-pane" style={{ display: activeTool === 'subnet' ? 'flex' : 'none' }}>
-            <SubnetCalcTool />
+          <div className={`inspect-tool-pane${toolHasData['subnet'] ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'subnet' ? 'flex' : 'none' }}>
+            <SubnetCalcTool onContent={(v) => reportContent('subnet', v)} />
           </div>
-          <div className="inspect-tool-pane" style={{ display: activeTool === 'mtr' ? 'flex' : 'none' }}>
-            <MtrTool onNotify={onNotify} />
+          <div className={`inspect-tool-pane${toolHasData['mtr'] ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'mtr' ? 'flex' : 'none' }}>
+            <MtrTool onNotify={onNotify} onContent={(v) => reportContent('mtr', v)} />
           </div>
-          <div className="inspect-tool-pane" style={{ display: activeTool === 'password' ? 'flex' : 'none' }}>
-            <PasswordGenTool onNotify={onNotify} />
+          <div className={`inspect-tool-pane${toolHasData['password'] ? ' inspect-fill-pane' : ''}`} style={{ display: activeTool === 'password' ? 'flex' : 'none' }}>
+            <PasswordGenTool onNotify={onNotify} onContent={(v) => reportContent('password', v)} />
           </div>
         </div>
     </div>
@@ -11180,7 +11183,7 @@ function parsePortList(raw: string): number[] {
   return [...out].sort((a, b) => a - b)
 }
 
-function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
+function PortScanTool({ onNotify, onContent }: { onNotify: (message: string) => void; onContent: (has: boolean) => void }) {
   const { t } = useAppLocale()
   const [host, setHost] = useState('127.0.0.1')
   const [portsRaw, setPortsRaw] = useState('22,23,80,443,3389,5900')
@@ -11191,6 +11194,10 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
   const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    onContent(scanning || scanned > 0 || !!error)
+  }, [onContent, scanning, scanned, error])
 
   // 端口事件缓冲：全端口扫描事件可达数万条/秒，先入队 200ms 批量合并，避免 UI 卡死
   const portHitBufferRef = useRef<{ port: number; open: boolean }[]>([])
@@ -11424,7 +11431,7 @@ function formatTime(d: Date) {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
+function PingTool({ onNotify, onContent }: { onNotify: (message: string) => void; onContent: (has: boolean) => void }) {
   const { t } = useAppLocale()
   const [hostsRaw, setHostsRaw] = useState('192.168.1.1\n192.168.1.2')
   const [count, setCount] = useState('10')
@@ -11437,6 +11444,10 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [rounds, setRounds] = useState(0)
   const [errors, setErrors] = useState<string[]>([])
   const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    onContent(running || Object.keys(summary).length > 0 || rounds > 0 || errors.length > 0)
+  }, [onContent, running, summary, rounds, errors])
 
   // 高频事件缓冲：后端并行 ping 事件可达数百条/秒，先入队，200ms 批量合并更新一次，明细仍近实时
   const rowBufferRef = useRef<{ ip: string; ok: boolean; rttMs: number; ttl: number }[]>([])
@@ -11765,11 +11776,15 @@ interface SubnetResult {
   last: string
 }
 
-function SubnetCalcTool() {
+function SubnetCalcTool({ onContent }: { onContent: (has: boolean) => void }) {
   const { t } = useAppLocale()
   const [cidr, setCidr] = useState('192.168.1.0/24')
   const [result, setResult] = useState<SubnetResult | null>(null)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    onContent(!!result || !!error)
+  }, [onContent, result, error])
 
   function calc() {
     const m = cidr.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/)
@@ -11871,13 +11886,17 @@ function SubnetCalcTool() {
 // ==================== 小工具：MTR 路由追踪 ====================
 type TraceHop = { hop: number; rtt1: string; rtt2: string; rtt3: string; ip: string }
 
-function MtrTool({ onNotify }: { onNotify: (message: string) => void }) {
+function MtrTool({ onNotify, onContent }: { onNotify: (message: string) => void; onContent: (has: boolean) => void }) {
   const { t } = useAppLocale()
   const [target, setTarget] = useState('')
   const [running, setRunning] = useState(false)
   const [hops, setHops] = useState<TraceHop[]>([])
   const [error, setError] = useState('')
   const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    onContent(running || hops.length > 0 || !!error)
+  }, [onContent, running, hops, error])
 
   useEffect(() => {
     const tasks = [
@@ -12001,7 +12020,7 @@ function MtrTool({ onNotify }: { onNotify: (message: string) => void }) {
 }
 
 // ==================== 小工具：密码生成器（纯前端） ====================
-function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) {
+function PasswordGenTool({ onNotify, onContent }: { onNotify: (message: string) => void; onContent: (has: boolean) => void }) {
   const { t } = useAppLocale()
   const [length, setLength] = useState(16)
   const [count, setCount] = useState(5)
@@ -12012,6 +12031,10 @@ function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) 
   const [avoidAmbiguous, setAvoidAmbiguous] = useState(true)
   const [passwords, setPasswords] = useState<string[]>([])
   const [copied, setCopied] = useState('')
+
+  useEffect(() => {
+    onContent(passwords.length > 0)
+  }, [onContent, passwords])
 
   const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
   const LOWER = 'abcdefghijklmnopqrstuvwxyz'
