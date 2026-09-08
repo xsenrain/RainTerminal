@@ -811,3 +811,15 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - Y 轴：20% 边距改 ±4% 精确贴合数据，曲线铺满整个图高，消除上下空白
 - 20 分钟窗口 600 点保持（2 秒/点）
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 监控大图 v4：布局空白一次性根治
+
+- 空白根因1：.monitor-widget 是 grid 3行(中间 minmax(112px,1fr) 拉伸) + 子元素5个流式放置，
+  图表与卡片间被拉伸出 ~140px 空白 → 改 flex column，子元素按内容排列
+- 空白根因2：.monitor-chart min-height:320px 而 uPlot canvas 只有 216px，容器被撑大 → 统一固定 260px
+- X 轴：标签只在整分钟显示(秒!=0 返回空串)，消除 19:24 重复重叠
+- Y 轴：去掉 range 函数(实测不生效)，改 setData 后 plot.setScale('y',{min,max}) 强制贴合数据铺满图高
+- X 轴范围：setScale('x') 跟随数据窗口
+- 验证：npm build 通过

@@ -2745,9 +2745,9 @@ html[data-appearance='dark'] .terminal-cli-launcher[data-monochrome='true'] img 
 .file-widget,
 .monitor-widget {
   position: relative;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -3539,8 +3539,6 @@ body:has(.app-toast) .file-download-progress {
 }
 
 .monitor-widget {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(112px, 1fr) auto;
   gap: 10px;
   padding: 12px;
 }
@@ -3581,7 +3579,6 @@ body:has(.app-toast) .file-download-progress {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-bottom: 8px;
 }
 .monitor-res-card,
 .monitor-net-card {
@@ -3654,7 +3651,7 @@ body:has(.app-toast) .file-download-progress {
 
 .monitor-chart {
   position: relative;
-  min-height: 320px;
+  height: 260px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;

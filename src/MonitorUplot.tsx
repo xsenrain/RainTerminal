@@ -60,19 +60,11 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
 
     const opts: uPlot.Options = {
       width: Math.max(320, wrap.clientWidth || 520),
-      height: 216,
+      height: 260,
       padding: [12, 10, 6, 6],
       scales: {
         x: { time: true },
-        y: {
-          range: (_self, dataMin, dataMax) => {
-            if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMax <= dataMin) return [0, 100]
-            const span = Math.max(1, dataMax - dataMin)
-            const lo = Math.max(0, dataMin - span * 0.04)
-            const hi = Math.min(100, dataMax + span * 0.04)
-            return hi - lo < 2 ? [Math.max(0, lo - 1), Math.min(100, hi + 1)] : [lo, hi]
-          },
-        },
+        y: {},
       },
       series: [
         {},
@@ -93,6 +85,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
           font: '11px "Segoe UI Variable", "Inter", system-ui, sans-serif',
           values: (_self, ticks) => ticks.map((sec) => {
             const d = new Date(sec * 1000)
+            if (d.getSeconds() !== 0) return ''
             const hh = String(d.getHours()).padStart(2, '0')
             const mm = String(d.getMinutes()).padStart(2, '0')
             return `${hh}:${mm}`
@@ -155,7 +148,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
 
     const ro = new ResizeObserver(() => {
       const width = wrap.clientWidth
-      if (width > 0) plot.setSize({ width, height: 216 })
+      if (width > 0) plot.setSize({ width, height: 260 })
     })
     ro.observe(wrap)
 
@@ -180,7 +173,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
     if (!plot || values.length < 2) return
     const wrap = wrapRef.current
     if (wrap && wrap.clientWidth > 0 && plot.width !== wrap.clientWidth) {
-      plot.setSize({ width: wrap.clientWidth, height: 216 })
+      plot.setSize({ width: wrap.clientWidth, height: 260 })
     }
     const n = values.length
     const now = Date.now()
@@ -193,6 +186,19 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
       vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
     }
     plot.setData([times as unknown as number[], vals as unknown as number[]])
+    // 强制 y 轴贴合数据（铺满图高），x 轴跟随数据窗口
+    const finite = vals.filter((v) => Number.isFinite(v))
+    if (finite.length >= 2) {
+      const dMin = Math.min(...finite)
+      const dMax = Math.max(...finite)
+      if (dMax > dMin) {
+        const span = dMax - dMin
+        const lo = Math.max(0, dMin - span * 0.04)
+        const hi = Math.min(100, dMax + span * 0.04)
+        plot.setScale('y', { min: lo, max: hi })
+      }
+    }
+    plot.setScale('x', { min: times[0], max: times[n - 1] })
   }, [rebuildKey, values])
 
   return (
