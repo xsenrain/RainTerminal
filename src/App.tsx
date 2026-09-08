@@ -10546,6 +10546,8 @@ function InspectToolbox({
   const [discoverScanning, setDiscoverScanning] = useState(false)
   const [discoverProgress, setDiscoverProgress] = useState<{ scanned: number; total: number } | null>(null)
   const [discoverPhase, setDiscoverPhase] = useState<'alive' | 'ports' | null>(null)
+  const [discoverFinished, setDiscoverFinished] = useState(false)
+  const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
   const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(new Set())
   const [discoverVendor, setDiscoverVendor] = useState<Record<string, string>>({})
@@ -10589,6 +10591,8 @@ function InspectToolbox({
   async function runScan() {
     if (discoverScanning) return
     setDiscoverScanning(true)
+    setDiscoverFinished(false)
+    setDiscoverError('')
     setDiscoverProgress(null)
     setDiscoverPhase(null)
     setDiscoverRows({})
@@ -10613,11 +10617,14 @@ function InspectToolbox({
       })
       if (hits.length === 0) onNotify(t('范围内未发现在线设备'))
     } catch (reason) {
-      onNotify(String(reason).replace(/^Error:\s*/i, ''))
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setDiscoverError(message)
+      onNotify(message)
     } finally {
       setDiscoverScanning(false)
       setDiscoverProgress(null)
       setDiscoverPhase(null)
+      setDiscoverFinished(true)
     }
   }
 
@@ -10716,7 +10723,7 @@ function InspectToolbox({
               </span>
             </div>
           )}
-          {(discoverScanning || Object.keys(discoverRows).length > 0) && (
+          {(discoverScanning || discoverFinished || Object.keys(discoverRows).length > 0) && (
             <div className="inspect-scan-table-wrap">
               <table className="inspect-scan-table">
                 <thead>
@@ -10738,7 +10745,13 @@ function InspectToolbox({
                 <tbody>
                   {Object.keys(discoverRows).length === 0 && (
                     <tr>
-                      <td className="inspect-discover-empty" colSpan={12}>{t('正在检测，在线设备将逐个出现…')}</td>
+                      <td className="inspect-discover-empty" colSpan={12}>
+                        {discoverError
+                          ? `${t('扫描失败')}：${discoverError}`
+                          : discoverFinished
+                            ? `${t('扫描完成')} · ${t('未发现在线设备，请确认 IP 范围或本机网络')}`
+                            : t('正在检测，在线设备将逐个出现…')}
+                      </td>
                     </tr>
                   )}
                   {Object.entries(discoverRows)
