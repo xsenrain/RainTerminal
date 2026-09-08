@@ -894,3 +894,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 修复：scales.y 改用 uPlot 官方 range 函数，每次数据更新自动
   计算 [0, 数据最大*1.15]，标尺始终覆盖数据范围
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · Y轴刻度双实例重叠修复
+
+- 根因：Y轴刻度两套交错(3.6/8.0/2.4/6.8/1.2/5.6/0) = 两个 uPlot 实例
+  的 canvas 重叠，各自画一套刻度；主题重建时旧实例 canvas 残留
+- 修复1：cleanup 加 wrap.replaceChildren() 清空容器，杜绝旧实例残留
+- 修复2：MutationObserver 去掉 'style' 监听(避免频繁重建触发双实例)
+- 验证：npm build 通过

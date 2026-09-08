@@ -212,6 +212,7 @@ function MonitorUplot({
       ro.disconnect()
       plot.destroy()
       plotRef.current = null
+      wrap.replaceChildren()
     }
   }, [label, label2, rebuildKey, isRate])
 
@@ -220,7 +221,7 @@ function MonitorUplot({
     const observer = new MutationObserver(() => {
       setRebuildKey((k) => k + 1)
     })
-    observer.observe(el, { attributes: true, attributeFilter: ['style', 'data-appearance', 'class'] })
+    observer.observe(el, { attributes: true, attributeFilter: ['data-appearance', 'class'] })
     return () => observer.disconnect()
   }, [])
 
