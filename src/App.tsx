@@ -11929,7 +11929,7 @@ function MtrTool({ onNotify }: { onNotify: (message: string) => void }) {
   }
 
   return (
-    <div className="inspect-toolbox-card">
+    <div className={`inspect-toolbox-card${running || hops.length > 0 || error ? ' inspect-fill-card' : ''}`}>
       <div className="inspect-toolbox-card-head">
         <Route size={15} />
         <strong>{t('MTR 路由追踪')}</strong>
@@ -12088,7 +12088,7 @@ function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) 
   }
 
   return (
-    <div className="inspect-toolbox-card">
+    <div className={`inspect-toolbox-card${passwords.length > 0 ? ' inspect-fill-card' : ''}`}>
       <div className="inspect-toolbox-card-head">
         <KeyRound size={15} />
         <strong>{t('密码生成器')}</strong>

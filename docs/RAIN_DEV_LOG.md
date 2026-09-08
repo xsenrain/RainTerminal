@@ -1238,3 +1238,13 @@ MTR 路由追踪（mtr tab）：
 - 密码导出：新增后端 export_passwords_file（另存为对话框，txt 过滤器，写文件），
   "复制全部"右侧加"导出"按钮，导出后 onNotify 显示保存路径
 - 注意：插入 tauri command 时若锚点不含 #[tauri::command] 会切坏相邻命令属性，需回补
+
+---
+
+## 2026-09-08 · 小工具卡片改为条件撑满
+
+- 问题：MTR/密码生成器无数据时卡片也撑满，底部空白
+- 改动：.inspect-tool-pane .inspect-toolbox-card 移除无条件 flex:1；
+  新增 .inspect-fill-card 条件类（有内容才 flex:1 撑满）
+- MtrTool：running/有跳数/错误时撑满；未开始保持矮
+- PasswordGenTool：生成密码后撑满；未生成保持矮

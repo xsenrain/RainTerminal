@@ -7686,6 +7686,8 @@ body.native-window-drag-active .monitor-tabs button {
 }
 .inspect-tool-pane .inspect-toolbox-card {
   max-width: none;
+}
+.inspect-tool-pane .inspect-toolbox-card.inspect-fill-card {
   flex: 1;
   min-height: 0;
 }
