@@ -684,3 +684,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 前端批量 Ping 新增「超时(ms)」输入框（默认 500，范围 200-3000），可自行调节
 - tauriBridge mock 同步 timeoutMs；i18n 增加超时(ms) 键
 - 验证：npm run build + cargo check + cargo test --lib icmp（2 passed）通过
+
+---
+
+## 2026-09-08 · 批量 Ping 输入区布局优化
+
+- 右侧控件（次数/超时/持续监控/开始探测）收进 300px 带背景面板，视觉成组不再孤零零挤在右侧
+- 次数与超时(ms) 并排两列 grid，持续监控与开始按钮通栏
+- 验证：npm run build 通过

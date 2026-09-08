@@ -7668,10 +7668,23 @@ body.native-window-drag-active .monitor-tabs button {
   line-height: 1.5;
 }
 .inspect-batch-right {
+  flex: 0 0 300px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  justify-content: flex-end;
+  align-items: center;
+  background: var(--surface-2, #f6f8fa);
+  border: 1px solid var(--border, #e1e4e8);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.inspect-batch-right-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  width: 100%;
+}
+.inspect-batch-right-grid .inspect-check-row,
+.inspect-batch-right-grid .utility-primary-button {
+  grid-column: 1 / -1;
 }
 .inspect-ping-row-selected {
   background: var(--surface-2);

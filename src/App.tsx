@@ -11238,42 +11238,44 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
           />
         </div>
         <div className="inspect-batch-right">
-          <div className="inspect-discover-row">
-            <span className="inspect-discover-label">{t('次数')}</span>
-            <input
-              value={count}
-              onChange={(event) => setCount(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void startPing()
-              }}
-              placeholder="10"
-              disabled={running}
-              style={{ width: 64 }}
-              title={t('次数（1-100）')}
-            />
+          <div className="inspect-batch-right-grid">
+            <div className="inspect-discover-row">
+              <span className="inspect-discover-label">{t('次数')}</span>
+              <input
+                value={count}
+                onChange={(event) => setCount(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void startPing()
+                }}
+                placeholder="10"
+                disabled={running}
+                style={{ width: 64 }}
+                title={t('次数（1-100）')}
+              />
+            </div>
+            <div className="inspect-discover-row">
+              <span className="inspect-discover-label">{t('超时(ms)')}</span>
+              <input
+                value={timeoutMs}
+                onChange={(event) => setTimeoutMs(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void startPing()
+                }}
+                placeholder="500"
+                disabled={running}
+                style={{ width: 64 }}
+                title={t('单次探测超时毫秒数（200-3000），越小探测越快，过小可能误报超时')}
+              />
+            </div>
+            <label className="inspect-check-row">
+              <input type="checkbox" checked={monitor} onChange={(event) => setMonitor(event.target.checked)} disabled={running} />
+              <span>{t('持续监控（每秒一轮）')}</span>
+            </label>
+            <button className="utility-primary-button compact" type="button" onClick={() => (running ? stopPing() : void startPing())}>
+              <RefreshCw size={13} />
+              {running ? `${t('停止')} ${rounds}` : t('开始探测')}
+            </button>
           </div>
-          <div className="inspect-discover-row">
-            <span className="inspect-discover-label">{t('超时(ms)')}</span>
-            <input
-              value={timeoutMs}
-              onChange={(event) => setTimeoutMs(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void startPing()
-              }}
-              placeholder="500"
-              disabled={running}
-              style={{ width: 64 }}
-              title={t('单次探测超时毫秒数（200-3000），越小探测越快，过小可能误报超时')}
-            />
-          </div>
-          <label className="inspect-check-row">
-            <input type="checkbox" checked={monitor} onChange={(event) => setMonitor(event.target.checked)} disabled={running} />
-            <span>{t('持续监控（每秒一轮）')}</span>
-          </label>
-          <button className="utility-primary-button compact" type="button" onClick={() => (running ? stopPing() : void startPing())}>
-            <RefreshCw size={13} />
-            {running ? `${t('停止')} ${rounds}` : t('开始探测')}
-          </button>
         </div>
       </div>
       {errors.length > 0 && (
