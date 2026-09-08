@@ -538,3 +538,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - **判定标准**：TCP connect 成功 = 三次握手完成 = 端口确实监听，通即 ✓（与 MobaXterm 同原理）
 - **速度**：每 IP 一线程并行探测全部端口，单 IP 最坏一个超时周期，254 台约 0.2-0.5s
 - **验证**：npm run build 通过、cargo check 通过
+
+---
+
+## 2026-09-08 · 网段发现 V7：ICMP ping 存活检测（对齐 MobaXterm，网络通即上屏）
+
+- **对比差异根因**：MobaXterm 用 ICMP ping 判存活——网络通就显示（哪怕端口全 ✗）；此前我们以目标端口开放判存活，ping 通但没开目标端口的设备被漏掉（对比时少了 3 台）
+- **修复**：每个 IP 一线程内并行执行——ICMP ping（Windows IcmpSendEcho 系统 API，普通权限，即 ping.exe 底层）300ms + TCP 并行探测全部目标端口 200ms；ping 通或有端口开放即上屏，端口全关设备也显示（全 ✗），与 MobaXterm 一致
+- **验证**：npm run build 通过、cargo check 通过

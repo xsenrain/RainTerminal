@@ -1138,7 +1138,7 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（单阶段全并行：一次探测全部端口，支持自定义端口） ====================
+// ==================== 网段发现（ICMP ping 存活 + TCP 端口并行探测） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
@@ -1153,7 +1153,6 @@ fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
 }
 
 /// 对同一 IP 的多个端口并行探测（每端口一个短线程），返回开放的端口。
-/// 单 IP 耗时 ≈ 一个超时周期（而非 端口数 × 超时）。
 fn probe_ports_parallel(ip: std::net::Ipv4Addr, ports: &[u16], timeout: Duration) -> Vec<u16> {
     let handles: Vec<_> = ports
         .iter()
@@ -1173,6 +1172,66 @@ fn probe_ports_parallel(ip: std::net::Ipv4Addr, ports: &[u16], timeout: Duration
             }
         })
         .collect()
+}
+
+/// ICMP ping 存活检测（Windows 系统 API IcmpSendEcho，普通权限可用，即 ping.exe 底层实现）。
+#[cfg(windows)]
+fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct IcmpEchoReply {
+        address: u32,
+        status: u32,
+        rtt: u32,
+        data_size: u16,
+        reserved: u16,
+        data: *mut u8,
+        options: [u8; 20],
+    }
+
+    unsafe extern "system" {
+        fn IcmpCreateFile() -> *mut c_void;
+        fn IcmpSendEcho(
+            handle: *mut c_void,
+            dest: u32,
+            data: *const u8,
+            size: u16,
+            options: *const u8,
+            reply: *mut u8,
+            reply_size: u32,
+            timeout: u32,
+        ) -> u32;
+        fn IcmpCloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    unsafe {
+        let handle = IcmpCreateFile();
+        if handle.is_null() {
+            return false;
+        }
+        let ip_net = u32::from_be_bytes(ip.octets());
+        let data: [u8; 16] = *b"RainTerminalPing";
+        let reply_size = std::mem::size_of::<IcmpEchoReply>() + data.len() + 8;
+        let mut reply: Vec<u8> = vec![0u8; reply_size];
+        let sent = IcmpSendEcho(
+            handle,
+            ip_net,
+            data.as_ptr(),
+            data.len() as u16,
+            std::ptr::null(),
+            reply.as_mut_ptr(),
+            reply_size as u32,
+            timeout_ms,
+        );
+        IcmpCloseHandle(handle);
+        sent > 0
+    }
+}
+
+#[cfg(not(windows))]
+fn ping_host(_ip: std::net::Ipv4Addr, _timeout_ms: u32) -> bool {
+    false
 }
 
 /// 反向域名解析，带 600ms 超时兜底（DNS 慢时不阻塞扫描）。
@@ -1217,11 +1276,11 @@ where
 }
 
 /// 扫描 [start_ip, end_ip] 范围内设备（async + spawn_blocking，不阻塞主线程）：
-/// 每个 IP 一个线程，一次并行探测全部目标端口（7 个固定 + 自定义），有任一开放即视为在线：
-/// - 立即推送 inspect-scan-alive（{ip, name}，设备上屏）
-/// - 随后推送 inspect-scan-port（{ip, open_ports}，端口 ✓/✗）
-/// 进度：每完成一台推送 inspect-scan-progress（scanned/total）。
-/// TCP connect 成功 = 三次握手完成 = 端口确实监听，即判定该服务开放（通则 ✓）。
+/// 每个 IP 一个线程全并行：
+/// 1. ICMP ping 判网络连通（300ms，与 ping.exe 同底层）
+/// 2. 并行 TCP 探测全部目标端口（7 固定 + 自定义，200ms）
+/// ping 通 或 有任一端口开放 → 判定设备在线，立即上屏（inspect-scan-alive + inspect-scan-port）。
+/// 端口全关的设备也会显示（端口列 ✗），与 MobaXterm 行为一致。
 #[tauri::command]
 pub async fn scan_inspect_network(
     app: tauri::AppHandle,
@@ -1242,7 +1301,6 @@ pub async fn scan_inspect_network(
             return Err("扫描范围过大，最多支持 8192 个 IP（如 /19）".into());
         }
 
-        // 目标端口 = 7 固定 + 自定义（去重、1-65535 合法校验）
         let mut all_ports: Vec<u16> = vec![22, 23, 3389, 5900, 21, 80, 443];
         for p in custom_ports {
             if p > 0 && p <= 65535 && !all_ports.contains(&p) {
@@ -1250,7 +1308,6 @@ pub async fn scan_inspect_network(
             }
         }
 
-        // 每个 IP 一个线程全并行（≤512 全开，更大按 256/批）
         let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let processed = Arc::new(AtomicUsize::new(0));
         let total = count;
@@ -1263,9 +1320,11 @@ pub async fn scan_inspect_network(
             let app = app.clone();
             move |i| {
                 let ip = std::net::Ipv4Addr::from(start_u + i as u32);
-                // 一次并行探测全部目标端口，单 IP 最坏一个超时周期（200ms）
+                // ping 与 TCP 端口探测并行推进，单 IP 最坏约 300ms
+                let ping_handle = std::thread::spawn(move || ping_host(ip, 300));
                 let open = probe_ports_parallel(ip, &all_ports, Duration::from_millis(200));
-                if !open.is_empty() {
+                let up = ping_handle.join().unwrap_or(false);
+                if up || !open.is_empty() {
                     let name = reverse_hostname(ip);
                     hits.lock().unwrap().push(InspectScanHit {
                         ip: ip.to_string(),
