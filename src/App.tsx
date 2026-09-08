@@ -1727,11 +1727,13 @@ function App() {
     }
 
     const currentWidgets = activeWorkspace.widgets
-    const requestedAuxTypes: Array<Extract<WorkbenchWidgetType, 'files' | 'monitor' | 'processes'>> = [
-      ...(serverLaunchOptions.files ? ['files' as const] : []),
-      ...(serverLaunchOptions.monitor ? ['monitor' as const] : []),
-      ...(serverLaunchOptions.processes ? ['processes' as const] : []),
-    ]
+    const requestedAuxTypes: Array<Extract<WorkbenchWidgetType, 'files' | 'monitor' | 'processes'>> = server.protocol === 'ssh'
+      ? [
+          ...(serverLaunchOptions.files ? ['files' as const] : []),
+          ...(serverLaunchOptions.monitor ? ['monitor' as const] : []),
+          ...(serverLaunchOptions.processes ? ['processes' as const] : []),
+        ]
+      : []
     const existing = currentWidgets.find(
       (widget) => widget.type === 'ssh-terminal' && widget.serverId === server.id,
     )
@@ -2169,7 +2171,7 @@ function App() {
         remoteTerminalConnectedSessions.delete(widgetSessionId)
         remoteTerminalConnectingSessions.delete(widgetSessionId)
         remoteTerminalManualConnectSessions.delete(widgetSessionId)
-        void invoke('ssh_disconnect', { sessionId: widgetSessionId }).catch(() => undefined)
+        void stopRemoteTerminalSession(widgetSessionId, widget.serverId)
       }
       if (widget.type === 'remote-desktop') {
         remoteDesktopAutoConnectWidgets.delete(widget.id)
@@ -2238,6 +2240,13 @@ function App() {
     )
   }
 
+  function stopRemoteTerminalSession(sessionId: string, serverId?: string) {
+    const protocol = serverId ? servers.find((server) => server.id === serverId)?.protocol ?? 'ssh' : 'ssh'
+    if (protocol === 'telnet') return invoke('telnet_session_stop', { sessionId }).catch(() => undefined)
+    if (protocol === 'serial') return invoke('serial_session_stop', { sessionId }).catch(() => undefined)
+    return invoke('ssh_disconnect', { sessionId }).catch(() => undefined)
+  }
+
   function closeWorkbenchWidget(id: string) {
     const closingWidget = activeWorkspace.widgets.find((widget) => widget.id === id)
     fileManagerViewCache.delete(id)
@@ -2252,7 +2261,7 @@ function App() {
       remoteTerminalConnectedSessions.delete(sessionId)
       remoteTerminalConnectingSessions.delete(sessionId)
       remoteTerminalManualConnectSessions.delete(sessionId)
-      void invoke('ssh_disconnect', { sessionId }).catch(() => undefined)
+      void stopRemoteTerminalSession(sessionId, closingWidget.serverId)
       if (closingWidget.serverId) {
         setServerConnectionStates((current) => ({ ...current, [closingWidget.serverId!]: 'ready' }))
         if (selectedServerIdRef.current === closingWidget.serverId) {
@@ -2293,7 +2302,7 @@ function App() {
       remoteTerminalConnectedSessions.delete(sessionId)
       remoteTerminalConnectingSessions.delete(sessionId)
       remoteTerminalManualConnectSessions.delete(sessionId)
-      void invoke('ssh_disconnect', { sessionId }).catch(() => undefined)
+      void stopRemoteTerminalSession(sessionId, refreshingWidget.serverId)
       if (refreshingWidget.serverId) {
         setServerConnectionStates((current) => ({ ...current, [refreshingWidget.serverId!]: 'connecting' }))
         if (selectedServerIdRef.current === refreshingWidget.serverId) {
@@ -6477,6 +6486,13 @@ function RemoteTerminalWidget({
   }
 
   function scheduleRemoteReconnect(message: string) {
+    if (server?.protocol && server.protocol !== 'ssh') {
+      remoteTerminalConnectingSessions.delete(sessionIdRef.current)
+      remoteTerminalConnectedSessions.delete(sessionIdRef.current)
+      remoteTerminalLogStore.emit()
+      sshStartedRef.current = false
+      return
+    }
     if (!server || !connectionRequestedRef.current || intentionalCloseRef.current || reconnectBlockedRef.current || reconnectTimerRef.current !== null || !hasConnectionAuthentication(server)) return
     const targetServer = server
     const normalized = message.toLowerCase()
@@ -6534,7 +6550,7 @@ function RemoteTerminalWidget({
       .catch(() => undefined)
       .then(() => {
         if (targetSessionId !== sessionIdRef.current || !sshStartedRef.current) return undefined
-        return invoke('ssh_write', { sessionId: targetSessionId, data }).then(() => {
+        return invoke(`${eventPrefix}_session_write`, { sessionId: targetSessionId, data }).then(() => {
           const elapsed = performance.now() - queuedAt
           if (elapsed > 32) {
             diag('ssh-input', `slow dispatch server=${server?.host ?? 'unknown'} bytes=${data.length} elapsed_ms=${elapsed.toFixed(1)}`)
@@ -6546,7 +6562,7 @@ function RemoteTerminalWidget({
         sshStartedRef.current = false
         remoteTerminalConnectedSessions.delete(targetSessionId)
         showRemoteInputUnavailable(`写入失败：${String(error)}`)
-        if (server) reportRemoteStatus(server.id, 'error', 'SSH 会话已断开')
+        if (server) reportRemoteStatus(server.id, 'error', `${protocolLabel} 会话已断开`)
       })
   }
 
@@ -6599,13 +6615,16 @@ function RemoteTerminalWidget({
 
     lastRemoteSizeRef.current = { cols: pending.cols, rows: pending.rows }
     diag('ssh-resize', `server=${server?.host ?? 'unknown'} size=${pending.cols}x${pending.rows} reason=${pending.reason}`)
-    void invoke('ssh_resize', {
-      sessionId: sessionIdRef.current,
-      cols: pending.cols,
-      rows: pending.rows,
-    }).catch((error) => {
-      diag('ssh-resize', `error server=${server?.host ?? 'unknown'} reason=${pending.reason} message=${String(error)}`)
-    })
+    const resizeCommand = eventPrefix === 'telnet' ? 'telnet_session_resize' : eventPrefix === 'serial' ? null : 'ssh_resize'
+    if (resizeCommand) {
+      void invoke(resizeCommand, {
+        sessionId: sessionIdRef.current,
+        cols: pending.cols,
+        rows: pending.rows,
+      }).catch((error) => {
+        diag('ssh-resize', `error server=${server?.host ?? 'unknown'} reason=${pending.reason} message=${String(error)}`)
+      })
+    }
   }
 
   function scheduleRemoteTerminalSizeSync(reason: string) {
@@ -6776,7 +6795,7 @@ function RemoteTerminalWidget({
       }
       if (!sshStartedRef.current) {
         if (!remoteTerminalConnectingSessions.has(sessionIdRef.current)) {
-          showRemoteInputUnavailable('SSH 会话已断开，请刷新窗口后重连。')
+          showRemoteInputUnavailable(`${protocolLabel} 会话已断开，请刷新窗口后重连。`)
         }
         return
       }
@@ -7011,9 +7030,9 @@ function RemoteTerminalWidget({
         setHealth((current) => current ? { ...current, connected: false } : null)
         inputUnavailableNoticeRef.current = true
         if (intentionalCloseRef.current) return
-        const message = event.payload.message ?? 'SSH 会话已关闭'
+        const message = event.payload.message ?? `${protocolLabel} 会话已关闭`
         appendRemoteTerminalOutput(`\r\n${message}\r\n`)
-        if (server) reportRemoteStatus(server.id, 'ready', 'SSH 会话已关闭')
+        if (server) reportRemoteStatus(server.id, 'ready', `${protocolLabel} 会话已关闭`)
         scheduleRemoteReconnect(message)
       }).catch(() => () => undefined),
     ]

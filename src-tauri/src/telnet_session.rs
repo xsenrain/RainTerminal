@@ -150,7 +150,8 @@ fn handle_telnet_bytes(
                 if cmd == DO {
                     match opt {
                         ECHO => {
-                            response.extend_from_slice(&[IAC, WONT, ECHO]);
+                            // 接受本地回显（部分网络设备拒绝 WONT 会异常，接受更兼容）
+                            response.extend_from_slice(&[IAC, WILL, ECHO]);
                         }
                         SGA => {
                             response.extend_from_slice(&[IAC, WILL, SGA]);
@@ -306,7 +307,7 @@ fn telnet_session_run(
         }
     })?;
     let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_nodelay(true);
 
     // 主动请求服务器抑制前进（通用终端行为）

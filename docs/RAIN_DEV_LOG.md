@@ -992,3 +992,19 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - openServerTerminal 打开终端按协议校验（serial 校验串口，不再误报“主机不能为空”）
 - openServerAuxWidget 文件/监控/进程仅允许 SSH 设备；右键菜单对非 SSH 设备隐藏这三项
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 修复：Telnet/Serial 连接后输入崩溃与 SSH 文案串用
+
+- 根因：RemoteTerminalWidget 输入路径硬编码 ssh_write，Telnet/Serial 会话无此命令 →
+  invoke 失败 → 误报“SSH 会话已断开”（连接本身是成功的）
+- 修复：
+  - 输入写命令按协议（ssh_write / telnet_session_write / serial_session_write）
+  - resize 按协议（ssh_resize / telnet_session_resize，Serial 无 resize 跳过）
+  - 断开/关闭/输入失败提示文案按协议（不再出现 SSH 字样）
+  - widget 关闭/刷新/工作区关闭统一走 stopRemoteTerminalSession（按协议停止会话，Serial 不再泄漏）
+  - Telnet/Serial 连接失败不再自动重连（阶段A手动连接原则，避免反复弹窗）
+- Telnet 后端健壮性：写超时 200ms→5s；ECHO 改为接受（WILL ECHO，网络设备更兼容）
+- SFTP/监控/进程仅 SSH：openServerTerminal 的“连接时打开”对非 SSH 设备不创建 aux widget
+- 验证：npm build + cargo check 通过
