@@ -38,8 +38,8 @@ fn safe_log_name(value: &str) -> String {
     }
 }
 
-/// 剥离终端 ANSI 转义序列（颜色/光标定位等），保留纯文本字节。
-/// 支持 CSI（ESC [ ... final）与两字节 ESC 序列（ESC M 等）。
+/// 剥离终端 ANSI 转义序列（颜色/光标定位/标题等），保留纯文本字节。
+/// 支持 CSI（ESC [ ... final）、OSC（ESC ] ... BEL/ST）、两字节 ESC 序列（ESC M 等）。
 fn strip_ansi_bytes(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len());
     let mut i = 0;
@@ -64,7 +64,6 @@ fn strip_ansi_bytes(data: &[u8]) -> Vec<u8> {
                         && c != b'='
                         && c != b' '
                     {
-                        // 参数区出现非法字节：整段视为异常，丢弃到该字节
                         i = j + 1;
                         consumed = true;
                         break;
@@ -72,7 +71,27 @@ fn strip_ansi_bytes(data: &[u8]) -> Vec<u8> {
                     j += 1;
                 }
                 if !consumed {
-                    i = data.len(); // 未闭合，丢弃剩余
+                    i = data.len();
+                }
+            } else if i + 1 < data.len() && data[i + 1] == b']' {
+                // OSC 终端标题等：丢弃直到 BEL(0x07) 或 ST(ESC \)
+                let mut j = i + 2;
+                let mut consumed = false;
+                while j < data.len() {
+                    if data[j] == 0x07 {
+                        i = j + 1;
+                        consumed = true;
+                        break;
+                    }
+                    if data[j] == 0x1b && j + 1 < data.len() && data[j + 1] == b'\\' {
+                        i = j + 2;
+                        consumed = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !consumed {
+                    i = data.len();
                 }
             } else if i + 1 < data.len() && (0x40..=0x5f).contains(&data[i + 1]) {
                 i += 2;

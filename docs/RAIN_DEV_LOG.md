@@ -1106,3 +1106,12 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
    - 快速重复点击 / 状态未同步时不再误触第二次"开始保存"
    - session_log_start 返回空路径时明确 toast 失败（不静默）
 - 验证：npm build + cargo check 零警告
+
+---
+
+## 2026-09-08 · 日志ANSI剥离补全OSC标题序列
+
+- Telnet 日志仍残留 0;testuser@... 乱码：bash 终端标题 OSC 序列 (ESC]0;标题 BEL)
+  被当作两字节 ESC 丢弃，剩 0;... 文本
+- strip_ansi_bytes 新增 OSC 处理：ESC] 后直到 BEL(0x07) 或 ST(ESC\) 整段丢弃
+- 验证：cargo check 零警告
