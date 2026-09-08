@@ -1208,3 +1208,22 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 修复：Cargo.toml → 1.0.3，APP_VERSION → '1.0.3'，Cargo.lock 随构建自动同步
 验证：app.exe 与 setup.exe FileVersion/ProductVersion 均 1.0.3
 教训：发版前必须三处同步（package.json / tauri.conf.json / Cargo.toml），前端 APP_VERSION 兜底值同步
+
+---
+
+## 2026-09-08 · 新增小工具：MTR 路由追踪 + 密码生成器
+
+MTR 路由追踪（mtr tab）：
+- 后端 batch_inspect.rs：start_tracert/stop_tracert
+  - 调用系统 tracert -d -h 30 -w 300（CREATE_NO_WINDOW 隐藏窗口，不闪 cmd）
+  - 后台线程逐行解析（跳数/3次延迟/IP），tracert-hop 事件逐跳推送，tracert-done 收尾
+  - 全局取消标志 + Child kill（stop_tracert 立即中断）
+  - 手写行解析（无正则依赖），已用真实 tracert 输出验证（含 * 超时与混合行）
+- 前端 MtrTool：目标输入、开始/停止、逐跳实时表格、完成统计
+
+密码生成器（password tab，纯前端）：
+- 长度 4-128、数量 1-50、字符集（大小写/数字/符号）、排除易混淆 Il1O0
+- crypto.getRandomValues 加密级随机；保证每个选中字符集至少出现一次 + 洗牌
+- 逐条复制 / 一键复制全部
+
+注册 start_tracert/stop_tracert 到 invoke_handler；index.css 新增工具样式；tsc 零错误

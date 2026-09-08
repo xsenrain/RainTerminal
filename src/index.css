@@ -7919,3 +7919,81 @@ body.native-window-drag-active .monitor-tabs button {
   accent-color: var(--accent, #4f7cff);
   cursor: pointer;
 }
+
+
+/* ============ 小工具：MTR / 密码生成器 ============ */
+.inspect-toolbox-note {
+  font-size: 12px;
+  color: var(--text-secondary, #57606a);
+}
+.inspect-pwd-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.inspect-pwd-grid label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.inspect-pwd-grid input {
+  width: 76px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: inherit;
+  font-size: 13px;
+}
+.inspect-pwd-opts {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.inspect-pwd-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.inspect-pwd-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.inspect-pwd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.inspect-pwd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.inspect-pwd-row code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  user-select: all;
+  word-break: break-all;
+}
+.inspect-pwd-row button {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #57606a);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+.inspect-pwd-row button:hover {
+  color: var(--accent, #0969da);
+}

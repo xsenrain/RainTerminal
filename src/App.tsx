@@ -110,9 +110,12 @@ import {
   Minus,
   MoreVertical,
   FolderPlus,
+  KeyRound,
+  Play,
   Plus,
   RefreshCw,
   RotateCcw,
+  Route,
   Save,
   Search,
   Server,
@@ -10891,7 +10894,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
-  const [activeTool, setActiveTool] = useState<'discover' | 'ports' | 'ping' | 'subnet'>('discover')
+  const [activeTool, setActiveTool] = useState<'discover' | 'ports' | 'ping' | 'subnet' | 'mtr' | 'password'>('discover')
 
   function parseCustomPorts(raw: string): number[] {
     return raw
@@ -10980,6 +10983,8 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
             ['ports', <Wifi size={14} key="ic" />, t('端口扫描')],
             ['ping', <Activity size={14} key="ic" />, t('Ping 工具')],
             ['subnet', <Network size={14} key="ic" />, t('子网计算器')],
+            ['mtr', <Route size={14} key="ic" />, t('MTR 追踪')],
+            ['password', <KeyRound size={14} key="ic" />, t('密码生成器')],
           ] as const
         ).map(([tool, icon, label]) => (
           <button
@@ -11134,6 +11139,12 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
           </div>
           <div className="inspect-tool-pane" style={{ display: activeTool === 'subnet' ? 'flex' : 'none' }}>
             <SubnetCalcTool />
+          </div>
+          <div className="inspect-tool-pane" style={{ display: activeTool === 'mtr' ? 'flex' : 'none' }}>
+            <MtrTool onNotify={onNotify} />
+          </div>
+          <div className="inspect-tool-pane" style={{ display: activeTool === 'password' ? 'flex' : 'none' }}>
+            <PasswordGenTool onNotify={onNotify} />
           </div>
         </div>
     </div>
@@ -11851,6 +11862,290 @@ function SubnetCalcTool() {
             <span>{t('掩码二进制')}</span>
             <code className="mono">{result.maskBin}</code>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==================== 小工具：MTR 路由追踪 ====================
+type TraceHop = { hop: number; rtt1: string; rtt2: string; rtt3: string; ip: string }
+
+function MtrTool({ onNotify }: { onNotify: (message: string) => void }) {
+  const { t } = useAppLocale()
+  const [target, setTarget] = useState('')
+  const [running, setRunning] = useState(false)
+  const [hops, setHops] = useState<TraceHop[]>([])
+  const [error, setError] = useState('')
+  const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    const tasks = [
+      listen<TraceHop>('tracert-hop', (event) => {
+        setHops((prev) => [...prev, event.payload])
+      }).catch(() => () => undefined),
+      listen<{ error: string | null; target?: string }>('tracert-done', (event) => {
+        setRunning(false)
+        setFinished(true)
+        if (event.payload.error) {
+          setError(event.payload.error)
+          onNotify(event.payload.error)
+        }
+      }).catch(() => () => undefined),
+    ]
+    return () => {
+      void Promise.all(tasks).then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()))
+    }
+  }, [onNotify])
+
+  async function runTrace() {
+    if (running) return
+    if (!target.trim()) {
+      setError(t('请输入追踪目标'))
+      return
+    }
+    setRunning(true)
+    setError('')
+    setFinished(false)
+    setHops([])
+    try {
+      await invoke('start_tracert', { target: target.trim() })
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setError(message)
+      onNotify(message)
+      setRunning(false)
+    }
+  }
+
+  async function stopTrace() {
+    try {
+      await invoke('stop_tracert')
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      onNotify(message)
+    }
+    setRunning(false)
+  }
+
+  return (
+    <div className="inspect-toolbox-card">
+      <div className="inspect-toolbox-card-head">
+        <Route size={15} />
+        <strong>{t('MTR 路由追踪')}</strong>
+        <span>{t('tracert 逐跳探测：显示每跳延迟与 IP，定位链路故障点')}</span>
+      </div>
+      <div className="inspect-discover-row">
+        <span className="inspect-discover-label">{t('目标')}</span>
+        <input
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void runTrace()
+          }}
+          placeholder={t('IP 或域名，如 192.168.1.1 / baidu.com')}
+          disabled={running}
+        />
+        {running ? (
+          <button className="utility-primary-button compact" type="button" onClick={() => void stopTrace()}>
+            <Square size={13} />
+            {t('停止')}
+          </button>
+        ) : (
+          <button className="utility-primary-button compact" type="button" onClick={() => void runTrace()}>
+            <Play size={13} />
+            {t('开始追踪')}
+          </button>
+        )}
+      </div>
+      {(running || hops.length > 0 || error) && (
+        <div className="inspect-scan-table-wrap inspect-fill-scroll">
+          <table className="inspect-scan-table">
+            <thead>
+              <tr>
+                <th>{t('跳数')}</th>
+                <th>{t('延迟 1')}</th>
+                <th>{t('延迟 2')}</th>
+                <th>{t('延迟 3')}</th>
+                <th>{t('地址')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hops.length === 0 && (
+                <tr>
+                  <td className="inspect-discover-empty" colSpan={5}>
+                    {error ? `${t('追踪失败')}：${error}` : t('正在探测路由，每一跳实时显示…')}
+                  </td>
+                </tr>
+              )}
+              {hops.map((hop) => (
+                <tr key={hop.hop}>
+                  <td className="mono">{hop.hop}</td>
+                  <td className="mono">{hop.rtt1}</td>
+                  <td className="mono">{hop.rtt2}</td>
+                  <td className="mono">{hop.rtt3}</td>
+                  <td className="mono">{hop.ip}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {finished && hops.length > 0 && (
+        <div className="inspect-toolbox-note">
+          {t('追踪完成')} · {hops.length} {t('跳')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==================== 小工具：密码生成器（纯前端） ====================
+function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) {
+  const { t } = useAppLocale()
+  const [length, setLength] = useState(16)
+  const [count, setCount] = useState(5)
+  const [useUpper, setUseUpper] = useState(true)
+  const [useLower, setUseLower] = useState(true)
+  const [useDigit, setUseDigit] = useState(true)
+  const [useSymbol, setUseSymbol] = useState(true)
+  const [avoidAmbiguous, setAvoidAmbiguous] = useState(true)
+  const [passwords, setPasswords] = useState<string[]>([])
+  const [copied, setCopied] = useState('')
+
+  const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  const LOWER = 'abcdefghijklmnopqrstuvwxyz'
+  const DIGIT = '0123456789'
+  const SYMBOL = '!@#$%^&*()-_=+[]{};:,.<>?'
+  const AMBIGUOUS = 'Il1O0o|`\'"'
+
+  function generate() {
+    const charsets: string[] = []
+    if (useUpper) charsets.push(UPPER)
+    if (useLower) charsets.push(LOWER)
+    if (useDigit) charsets.push(DIGIT)
+    if (useSymbol) charsets.push(SYMBOL)
+    const all = charsets.join('')
+    if (all.length === 0) {
+      onNotify(t('请至少选择一种字符类型'))
+      return
+    }
+    const filterAmb = (cs: string) => (avoidAmbiguous ? [...cs].filter((c) => !AMBIGUOUS.includes(c)).join('') : cs)
+    const pool = filterAmb(all)
+    if (pool.length === 0) {
+      onNotify(t('字符集为空，请调整选项'))
+      return
+    }
+    const rand = new Uint32Array(4)
+    const out: string[] = []
+    for (let i = 0; i < count; i++) {
+      const chars: string[] = charsets.map((cs) => {
+        const safe = filterAmb(cs)
+        crypto.getRandomValues(rand)
+        return safe[rand[0] % safe.length]
+      })
+      while (chars.length < length) {
+        crypto.getRandomValues(rand)
+        chars.push(pool[rand[0] % pool.length])
+      }
+      for (let j = chars.length - 1; j > 0; j--) {
+        crypto.getRandomValues(rand)
+        const k = rand[0] % (j + 1)
+        const tmp = chars[j]
+        chars[j] = chars[k]
+        chars[k] = tmp
+      }
+      out.push(chars.slice(0, length).join(''))
+    }
+    setPasswords(out)
+    setCopied('')
+  }
+
+  async function copyAll() {
+    if (passwords.length === 0) return
+    try {
+      await navigator.clipboard.writeText(passwords.join('\n'))
+      setCopied(t('已复制全部'))
+    } catch {
+      onNotify(t('复制失败'))
+    }
+  }
+
+  return (
+    <div className="inspect-toolbox-card">
+      <div className="inspect-toolbox-card-head">
+        <KeyRound size={15} />
+        <strong>{t('密码生成器')}</strong>
+        <span>{t('生成随机强密码，可选字符集与排除易混淆字符')}</span>
+      </div>
+      <div className="inspect-pwd-grid">
+        <label>
+          {t('长度')}
+          <input
+            type="number"
+            min={4}
+            max={128}
+            value={length}
+            onChange={(event) => setLength(Math.max(4, Math.min(128, Number(event.target.value) || 16)))}
+          />
+        </label>
+        <label>
+          {t('数量')}
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={count}
+            onChange={(event) => setCount(Math.max(1, Math.min(50, Number(event.target.value) || 5)))}
+          />
+        </label>
+      </div>
+      <div className="inspect-pwd-opts">
+        {(
+          [
+            [useUpper, setUseUpper, t('大写 A-Z')],
+            [useLower, setUseLower, t('小写 a-z')],
+            [useDigit, setUseDigit, t('数字 0-9')],
+            [useSymbol, setUseSymbol, t('符号 !@#')],
+            [avoidAmbiguous, setAvoidAmbiguous, t('排除易混淆 Il1O0')],
+          ] as const
+        ).map(([checked, setter, label]) => (
+          <label key={label} className="inspect-pwd-check">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+      <div className="inspect-pwd-actions">
+        <button className="utility-primary-button compact" type="button" onClick={generate}>
+          <RefreshCw size={13} />
+          {t('生成密码')}
+        </button>
+        <button className="ghost-button compact" type="button" onClick={() => void copyAll()} disabled={passwords.length === 0}>
+          <Copy size={13} />
+          {copied || t('复制全部')}
+        </button>
+      </div>
+      {passwords.length > 0 && (
+        <div className="inspect-pwd-list">
+          {passwords.map((pwd, index) => (
+            <div key={`${pwd}-${index}`} className="inspect-pwd-row">
+              <code>{pwd}</code>
+              <button
+                type="button"
+                title={t('复制')}
+                onClick={() => {
+                  void navigator.clipboard.writeText(pwd).then(() => setCopied(t('已复制')))
+                }}
+              >
+                <Copy size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -1761,3 +1761,159 @@ pub async fn ping_batch_tool(
         .await
         .map_err(|e| format!("批量 ping 线程异常: {e}"))?
 }
+
+
+// ==================== 小工具：MTR 路由追踪（tracert 解析） ====================
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::AtomicBool;
+use std::sync::OnceLock;
+
+static TRACERT_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static TRACERT_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
+#[derive(serde::Serialize, Clone)]
+pub struct TraceHop {
+    pub hop: u32,
+    pub rtt1: String,
+    pub rtt2: String,
+    pub rtt3: String,
+    pub ip: String,
+}
+
+fn tracert_cancel_flag() -> &'static AtomicBool {
+    TRACERT_CANCEL
+        .get_or_init(|| Arc::new(AtomicBool::new(false)))
+        .as_ref()
+}
+
+fn tracert_child_slot() -> &'static Mutex<Option<Child>> {
+    TRACERT_CHILD.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "windows")]
+fn hide_tracert_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_tracert_window(_command: &mut Command) {}
+
+/// 解析 tracert 一行，如 "  1     1 ms     1 ms     1 ms  192.168.1.1"
+fn parse_tracert_line(line: &str) -> Option<TraceHop> {
+    let mut parts = line.trim_start().split_whitespace();
+    let hop = parts.next()?.parse::<u32>().ok()?;
+    let mut rtts: Vec<String> = Vec::with_capacity(3);
+    while rtts.len() < 3 {
+        let token = match parts.next() {
+            Some(token) => token,
+            None => break,
+        };
+        if token == "*" {
+            rtts.push("*".to_string());
+        } else if token == "<1" || token.chars().all(|c| c.is_ascii_digit()) {
+            let _unit = parts.next(); // "ms"
+            rtts.push(format!("{} ms", token));
+        } else {
+            // 到达 IP 段：剩余全部拼为地址
+            let mut ip = token.to_string();
+            for rest in parts {
+                ip.push(' ');
+                ip.push_str(rest);
+            }
+            while rtts.len() < 3 {
+                rtts.push("*".to_string());
+            }
+            return Some(TraceHop {
+                hop,
+                rtt1: rtts[0].clone(),
+                rtt2: rtts[1].clone(),
+                rtt3: rtts[2].clone(),
+                ip,
+            });
+        }
+    }
+    let ip = parts.collect::<Vec<_>>().join(" ");
+    Some(TraceHop {
+        hop,
+        rtt1: rtts[0].clone(),
+        rtt2: rtts[1].clone(),
+        rtt3: rtts[2].clone(),
+        ip: if ip.is_empty() { "*".to_string() } else { ip },
+    })
+}
+
+#[tauri::command]
+pub async fn start_tracert(app: tauri::AppHandle, target: String) -> Result<(), String> {
+    let target = target.trim().to_string();
+    if target.is_empty() {
+        return Err("追踪目标不能为空".to_string());
+    }
+    tracert_cancel_flag().store(false, Ordering::SeqCst);
+    if let Some(mut old) = tracert_child_slot().lock().unwrap().take() {
+        let _ = old.kill();
+        let _ = old.wait();
+    }
+
+    let app_clone = app.clone();
+    let target_clone = target.clone();
+    std::thread::spawn(move || {
+        let mut command = Command::new("tracert");
+        #[cfg(target_os = "windows")]
+        command.args(["-d", "-h", "30", "-w", "300"]);
+        #[cfg(not(target_os = "windows"))]
+        command.args(["-d", "-m", "30", "-w", "3"]);
+        command.arg(&target_clone);
+        command.stdout(Stdio::piped()).stderr(Stdio::null());
+        hide_tracert_window(&mut command);
+
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = app_clone.emit(
+                    "tracert-done",
+                    serde_json::json!({ "error": format!("启动 tracert 失败: {error}") }),
+                );
+                return;
+            }
+        };
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = app_clone.emit("tracert-done", serde_json::json!({ "error": "无法读取 tracert 输出" }));
+                return;
+            }
+        };
+        *tracert_child_slot().lock().unwrap() = Some(child);
+
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if tracert_cancel_flag().load(Ordering::SeqCst) {
+                if let Some(mut child) = tracert_child_slot().lock().unwrap().take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                break;
+            }
+            let line = line.unwrap_or_default();
+            if let Some(hop) = parse_tracert_line(&line) {
+                let _ = app_clone.emit("tracert-hop", hop);
+            }
+        }
+        if let Some(mut child) = tracert_child_slot().lock().unwrap().take() {
+            let _ = child.wait();
+        }
+        let _ = app_clone.emit("tracert-done", serde_json::json!({ "error": null, "target": target_clone }));
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_tracert() {
+    tracert_cancel_flag().store(true, Ordering::SeqCst);
+    if let Some(mut child) = tracert_child_slot().lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}

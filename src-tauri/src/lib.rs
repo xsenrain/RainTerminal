@@ -7556,6 +7556,8 @@ pub fn run() {
         batch_inspect::stop_port_scan,
             batch_inspect::ping_probe_tool,
             batch_inspect::ping_batch_tool,
+            batch_inspect::start_tracert,
+            batch_inspect::stop_tracert,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
