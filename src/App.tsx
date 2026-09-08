@@ -10537,7 +10537,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const [discoverEnd, setDiscoverEnd] = useState('192.168.1.254')
   const [discoverCustomPorts, setDiscoverCustomPorts] = useState('')
   const [discoverScanning, setDiscoverScanning] = useState(false)
-  const [discoverProgress, setDiscoverProgress] = useState<{ scanned: number; total: number } | null>(null)
+  const [discoverElapsed, setDiscoverElapsed] = useState(0)
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
@@ -10570,21 +10570,28 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
           [event.payload.ip]: { name: prev[event.payload.ip]?.name ?? '', open_ports: event.payload.open_ports },
         }))
       }).catch(() => () => undefined),
-      listen<{ scanned: number; total: number }>('inspect-scan-progress', (event) => {
-        setDiscoverProgress({ scanned: event.payload.scanned, total: event.payload.total })
-      }).catch(() => () => undefined),
     ]
     return () => {
       void Promise.all(tasks).then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()))
     }
   }, [])
 
+  useEffect(() => {
+    if (!discoverScanning) {
+      setDiscoverElapsed(0)
+      return
+    }
+    const start = Date.now()
+    const timer = window.setInterval(() => setDiscoverElapsed((Date.now() - start) / 1000), 100)
+    return () => window.clearInterval(timer)
+  }, [discoverScanning])
+
   async function runScan() {
     if (discoverScanning) return
     setDiscoverScanning(true)
     setDiscoverFinished(false)
     setDiscoverError('')
-    setDiscoverProgress(null)
+    setDiscoverElapsed(0)
     setDiscoverRows({})
     try {
       const hits = await invoke<{ ip: string; name: string; open_ports: number[] }[]>('scan_inspect_network', {
@@ -10605,7 +10612,6 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
       onNotify(message)
     } finally {
       setDiscoverScanning(false)
-      setDiscoverProgress(null)
       setDiscoverFinished(true)
     }
   }
@@ -10662,10 +10668,12 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
               style={{ flex: 1, maxWidth: 320 }}
             />
           </div>
-          {discoverScanning && discoverProgress && (
+          {discoverScanning && (
             <div className="inspect-scan-progress">
-              <div className="inspect-scan-progress-bar" style={{ width: `${Math.min(100, Math.round((discoverProgress.scanned / Math.max(1, discoverProgress.total)) * 100))}%` }} />
-              <span>{t('扫描中')}… {discoverProgress.scanned}/{discoverProgress.total}</span>
+              <div className="inspect-scan-progress-bar" style={{ width: `${Math.min(100, (discoverElapsed / 10) * 100)}%` }} />
+              <span>
+                {t('扫描中')}… {Math.min(10, discoverElapsed).toFixed(1)}s/10s · {t('已发现')} {Object.keys(discoverRows).length} {t('台')}
+              </span>
             </div>
           )}
           {(discoverScanning || discoverFinished || Object.keys(discoverRows).length > 0) && (
