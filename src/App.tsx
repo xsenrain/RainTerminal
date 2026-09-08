@@ -9202,7 +9202,12 @@ function MachineMonitorWidget({
         <span className="mch-range">{t('近')} {Math.round(((history[metric].length - 1) * 2) / 60 * 10) / 10} {t('分钟')}</span>
       </div>
       <div className="monitor-chart">
-        <MonitorUplot values={history[metric]} label={activeCard.label} />
+        <MonitorUplot
+          values={metric === 'network' ? history.networkUp : history[metric]}
+          values2={metric === 'network' ? history.networkDown : undefined}
+          label={metric === 'network' ? '上传' : activeCard.label}
+          label2={metric === 'network' ? '下载' : undefined}
+        />
       </div>
       {stats && (
         <div className="monitor-overview">
