@@ -1385,7 +1385,7 @@ pub async fn scan_inspect_network(
 
         let mut all_ports: Vec<u16> = vec![22, 23, 3389, 5900, 21, 80, 443];
         for p in custom_ports {
-            if p > 0 && p <= 65535 && !all_ports.contains(&p) {
+            if p > 0 && !all_ports.contains(&p) {
                 all_ports.push(p);
             }
         }
@@ -1476,12 +1476,26 @@ mod tests {
 /// 端口扫描：host 可为 IP 或域名（自动解析 IPv4）；ports 为待探测端口列表。
 /// 每端口一个短线程并行探测（256 端口/批），逐个推送 port-scan-hit（port/open），
 /// 进度推送 port-scan-progress（scanned/total），返回全部开放端口（升序）。
+// 端口扫描取消标志：前端可随时调用 stop_port_scan 中断进行中的扫描
+static PORT_SCAN_CANCEL: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicBool>> = std::sync::OnceLock::new();
+
+fn port_scan_cancel_flag() -> &'static std::sync::atomic::AtomicBool {
+    PORT_SCAN_CANCEL
+        .get_or_init(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
+}
+
+#[tauri::command]
+pub fn stop_port_scan() {
+    port_scan_cancel_flag().store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 #[tauri::command]
 pub async fn scan_ports_tool(
     app: tauri::AppHandle,
     host: String,
     ports: Vec<u16>,
 ) -> Result<Vec<u16>, String> {
+    port_scan_cancel_flag().store(false, std::sync::atomic::Ordering::SeqCst);
     let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u16>, String> {
         let host = host.trim().to_string();
         if host.is_empty() {
@@ -1496,7 +1510,7 @@ pub async fn scan_ports_tool(
             std::net::IpAddr::V4(v4) => v4,
             _ => unreachable!(),
         };
-        let mut ports: Vec<u16> = ports.into_iter().filter(|&p| p >= 1 && p <= 65535).collect();
+        let mut ports: Vec<u16> = ports.into_iter().filter(|&p| p >= 1).collect();
         ports.sort_unstable();
         ports.dedup();
         if ports.is_empty() {
@@ -1512,6 +1526,9 @@ pub async fn scan_ports_tool(
             let scanned = Arc::clone(&scanned);
             let app = app.clone();
             move |i| {
+                if port_scan_cancel_flag().load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
                 let port = ports[i];
                 let ok = tcp_probe(ip, port, Duration::from_millis(300));
                 if ok {

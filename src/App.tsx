@@ -10903,6 +10903,16 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
     }
   }
 
+  async function stopScan() {
+    try {
+      await invoke('stop_port_scan')
+    } catch {
+      // 忽略：后端扫描可能已结束
+    }
+    setScanning(false)
+    setFinished(true)
+  }
+
   return (
     <div className="inspect-toolbox-card">
       <div className="inspect-toolbox-card-head">
@@ -10932,9 +10942,9 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
           disabled={scanning}
           style={{ flex: 1, maxWidth: 240 }}
         />
-        <button className="utility-primary-button compact" type="button" onClick={() => void runScan()} disabled={scanning}>
+        <button className="utility-primary-button compact" type="button" onClick={() => (scanning ? void stopScan() : void runScan())}>
           <Search size={13} />
-          {scanning ? t('扫描中…') : t('开始扫描')}
+          {scanning ? t('停止') : t('开始扫描')}
         </button>
       </div>
       <div className="inspect-port-presets">
@@ -11115,8 +11125,8 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
 
   useEffect(() => {
     const tasks = [
-      listen<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }>('ping-batch-row', (event) => {
-        rowBufferRef.current.push({ ip: event.payload.ip, ok: event.payload.ok, rttMs: event.payload.rttMs, ttl: event.payload.ttl })
+      listen<{ ip: string; seq: number; ok: boolean; rtt_ms: number; ttl: number }>('ping-batch-row', (event) => {
+        rowBufferRef.current.push({ ip: event.payload.ip, ok: event.payload.ok, rttMs: event.payload.rtt_ms, ttl: event.payload.ttl })
       }).catch(() => () => undefined),
       listen<{ host: string; message: string }>('ping-batch-error', (event) => {
         setErrors((prev) => (prev.includes(event.payload.host) ? prev : [...prev, event.payload.host]))
@@ -11132,48 +11142,17 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
 
   async function runOneRound(hosts: string[], n: number) {
     try {
+      // 统计与明细一律以实时事件（ping-batch-row）为准，invoke 返回只补充主机名，避免重复计数
       const details = await invoke<{ ip: string; hostname: string; rows: PingBatchRow[] }[]>('ping_batch_tool', { hosts, count: n })
-      const now = formatTime(new Date())
-      const detailMap: Record<string, { hostname: string; rows: PingBatchRow[] }> = {}
-      const summaryMap: Record<string, PingSummary> = {}
-      for (const d of details) {
-        const rows = d.rows.map((r) => ({ ...r, time: now }))
-        if (rows.length > 500) rows.splice(0, rows.length - 500)
-        detailMap[d.ip] = { hostname: d.hostname, rows }
-        let ok = 0
-        let fail = 0
-        let rttSum = 0
-        let lastOk: boolean | null = null
-        let lastOkTime = ''
-        let lastFailTime = ''
-        let curStreak = 0
-        let maxStreak = 0
-        for (const r of d.rows) {
-          if (r.ok) {
-            ok += 1
-            rttSum += r.rttMs
-            lastOk = true
-            lastOkTime = now
-            curStreak = 0
-          } else {
-            fail += 1
-            lastOk = false
-            lastFailTime = now
-            curStreak += 1
-            maxStreak = Math.max(maxStreak, curStreak)
-          }
-        }
-        summaryMap[d.ip] = { ok, fail, rttSum, lastOk, lastOkTime, lastFailTime, curStreak, maxStreak, replyIp: d.ip }
-      }
+      const hostnames: Record<string, string> = {}
+      for (const d of details) hostnames[d.ip] = d.hostname
       setDetail((prev) => {
         const next = { ...prev }
-        for (const [ip, v] of Object.entries(detailMap)) {
-          const cur = next[ip] ?? { hostname: v.hostname, rows: [] }
-          next[ip] = { hostname: v.hostname, rows: [...cur.rows, ...v.rows].slice(-500) }
+        for (const [ip, name] of Object.entries(hostnames)) {
+          next[ip] = { hostname: name || prev[ip]?.hostname || '', rows: prev[ip]?.rows ?? [] }
         }
         return next
       })
-      setSummary((prev) => ({ ...prev, ...summaryMap }))
       return true
     } catch (reason) {
       const message = String(reason).replace(/^Error:\s*/i, '')
@@ -11346,7 +11325,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
                     </td>
                     <td className="mono">{row.lastOkTime || '-'}</td>
                     <td className="mono">{row.lastFailTime || '-'}</td>
-                    <td className="mono">{avgMs(row)}ms</td>
+                    <td className="mono">{row.ok > 0 ? `${avgMs(row)}ms` : '-'}</td>
                   </tr>
                 )
               })}

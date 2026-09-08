@@ -7388,6 +7388,7 @@ pub fn run() {
             batch_inspect::decrypt_secret,
             batch_inspect::scan_inspect_network,
             batch_inspect::scan_ports_tool,
+        batch_inspect::stop_port_scan,
             batch_inspect::ping_probe_tool,
             batch_inspect::ping_batch_tool,
         ])

@@ -236,6 +236,9 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       })
       return open as T
     }
+    case 'stop_port_scan': {
+      return null as T
+    }
     case 'ping_probe_tool': {
       // 沙箱 mock：模拟连续 ping（每 4 次失败 1 次）
       const host = typeof args.host === 'string' ? args.host : '127.0.0.1'
@@ -271,7 +274,7 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
           const ok = (hostIdx + seq) % 4 !== 0
           const rtt = ok ? 2 + ((hostIdx + seq * 7) % 24) : 1000
           window.setTimeout(
-            () => emitSandbox('ping-batch-row', { ip: host, seq, ok, rttMs: rtt, ttl: ok ? 63 : 0 }),
+            () => emitSandbox('ping-batch-row', { ip: host, seq, ok, rtt_ms: rtt, ttl: ok ? 63 : 0 }),
             hostIdx * 400 + seq * 500,
           )
         }
