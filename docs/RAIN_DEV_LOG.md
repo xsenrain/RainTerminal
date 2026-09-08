@@ -1115,3 +1115,15 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   被当作两字节 ESC 丢弃，剩 0;... 文本
 - strip_ansi_bytes 新增 OSC 处理：ESC] 后直到 BEL(0x07) 或 ST(ESC\) 整段丢弃
 - 验证：cargo check 零警告
+
+---
+
+## 2026-09-08 · 日志行消化：退格/回车编辑过程不再重复记录
+
+问题：输入命令输错删除重输时，日志原样记录 swap-s + 退格序列 + swapon --show
+方案：日志写入前做行消化（digest_line_bytes）
+- \x08 退格：按 UTF-8 字符边界删除行缓冲末尾一字符
+- CRLF 视为换行按行落盘；单独 CR 视为回行首覆盖（进度条只留最终行）
+- 连接关闭时冲刷未换行的最后一行
+- 附带 4 个单元测试：退格重输/回车覆盖/CRLF跨块/中文退格，cargo test 全过
+- 验证：cargo test session_log 4 passed
