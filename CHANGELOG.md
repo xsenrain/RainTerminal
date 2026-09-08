@@ -4,6 +4,22 @@ All notable changes to RainTerminal will be documented here. The project follows
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-08
+
+### Added
+
+- Telnet / Serial 手动连接支持（网络设备与 Linux 通用），默认端口 23，支持任意端口。
+- 连接后按需保存会话日志：系统"另存为"对话框，文件名可自定义（默认 IP-时间戳.log），支持开始/停止。
+- 会话日志自动剥离 ANSI 颜色/光标/标题控制序列；输入编辑（退格重输）自动消化为最终命令，服务端输出原样完整记录。
+
+### Fixed
+
+- SSH 输入命令名不匹配导致点"保存会话日志"即断开（ssh_session_write not found）。
+- 会话日志文件名重复追加时间戳、动态开启后日志为空。
+- Telnet 连接事件字段与前端不匹配导致一直"正在连接"。
+- Telnet ECHO 协商：登录输入用户名不可见（telnet-server 安全机制）。
+- 三个协议连接失败时日志条目泄漏；串口枚举支持手动输入 COM 号。
+
 ## [1.0.1] - 2026-09-06
 
 ### Added

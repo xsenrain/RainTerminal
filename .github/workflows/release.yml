@@ -36,7 +36,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: XunDuTerminal ${{ github.ref_name }}
+          releaseName: RainTerminal ${{ github.ref_name }}
           releaseBody: 发布说明见 CHANGELOG.md。下载后请使用 SHA256SUMS.txt 校验文件完整性；当前安装包尚未签名，Windows SmartScreen 可能显示提示。
           releaseDraft: true
           prerelease: true
@@ -50,7 +50,7 @@ jobs:
             Set-Content SHA256SUMS.txt
 
           $installer = $artifacts |
-            Where-Object { $_.Name -match '^XunDuTerminal_.+_x64-setup\.exe$' } |
+            Where-Object { $_.Name -match '^RainTerminal_.+_x64-setup\.exe$' } |
             Select-Object -First 1
           if (-not $installer) {
             throw 'Windows NSIS installer was not produced.'
@@ -60,7 +60,7 @@ jobs:
           $digest = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
           $manifest = [ordered]@{
             version = $version
-            notes = "XunDuTerminal $version 已发布，详细改动请查看发布说明。"
+            notes = "RainTerminal $version 已发布，详细改动请查看发布说明。"
             releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$tag"
             publishedAt = (Get-Date).ToUniversalTime().ToString('o')
             windows = [ordered]@{
@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "$TAG_NAME" --repo "$REPOSITORY" --pattern latest.json
-          manifest_sha="$(gh api "repos/$REPOSITORY/contents/deploy/xunduterminal/latest.json?ref=$DEFAULT_BRANCH" --jq .sha)"
+          manifest_sha="$(gh api "repos/$REPOSITORY/contents/deploy/rainterminal/latest.json?ref=$DEFAULT_BRANCH" --jq .sha)"
           manifest_content="$(base64 -w 0 latest.json)"
           jq -n \
             --arg message "Publish update manifest for $TAG_NAME" \
@@ -97,4 +97,4 @@ jobs:
             --arg sha "$manifest_sha" \
             --arg branch "$DEFAULT_BRANCH" \
             '{message: $message, content: $content, sha: $sha, branch: $branch}' > manifest-update.json
-          gh api --method PUT "repos/$REPOSITORY/contents/deploy/xunduterminal/latest.json" --input manifest-update.json
+          gh api --method PUT "repos/$REPOSITORY/contents/deploy/rainterminal/latest.json" --input manifest-update.json
