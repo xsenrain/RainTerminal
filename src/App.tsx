@@ -10535,12 +10535,19 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const { t } = useAppLocale()
   const [discoverStart, setDiscoverStart] = useState('192.168.1.1')
   const [discoverEnd, setDiscoverEnd] = useState('192.168.1.254')
+  const [discoverCustomPorts, setDiscoverCustomPorts] = useState('')
   const [discoverScanning, setDiscoverScanning] = useState(false)
   const [discoverProgress, setDiscoverProgress] = useState<{ scanned: number; total: number } | null>(null)
-  const [discoverPhase, setDiscoverPhase] = useState<'alive' | 'ports' | null>(null)
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
+
+  function parseCustomPorts(raw: string): number[] {
+    return raw
+      .split(/[,，;；\s]+/)
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535)
+  }
 
   function ipCmp(a: string, b: string): number {
     const pa = a.split('.').map(Number)
@@ -10563,8 +10570,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
           [event.payload.ip]: { name: prev[event.payload.ip]?.name ?? '', open_ports: event.payload.open_ports },
         }))
       }).catch(() => () => undefined),
-      listen<{ phase: 'alive' | 'ports'; scanned: number; total: number }>('inspect-scan-progress', (event) => {
-        setDiscoverPhase(event.payload.phase)
+      listen<{ scanned: number; total: number }>('inspect-scan-progress', (event) => {
         setDiscoverProgress({ scanned: event.payload.scanned, total: event.payload.total })
       }).catch(() => () => undefined),
     ]
@@ -10579,12 +10585,12 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
     setDiscoverFinished(false)
     setDiscoverError('')
     setDiscoverProgress(null)
-    setDiscoverPhase(null)
     setDiscoverRows({})
     try {
       const hits = await invoke<{ ip: string; name: string; open_ports: number[] }[]>('scan_inspect_network', {
         startIp: discoverStart,
         endIp: discoverEnd,
+        customPorts: parseCustomPorts(discoverCustomPorts),
       })
       // 兜底合并（正常情况下事件已流式填充）
       setDiscoverRows((prev) => {
@@ -10600,7 +10606,6 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
     } finally {
       setDiscoverScanning(false)
       setDiscoverProgress(null)
-      setDiscoverPhase(null)
       setDiscoverFinished(true)
     }
   }
@@ -10644,12 +10649,23 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
               {discoverScanning ? t('扫描中…') : t('开始扫描')}
             </button>
           </div>
+          <div className="inspect-discover-row">
+            <span className="inspect-discover-label">{t('自定义端口')}</span>
+            <input
+              value={discoverCustomPorts}
+              onChange={(event) => setDiscoverCustomPorts(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void runScan()
+              }}
+              placeholder={t('如 8080,8443，逗号分隔，可留空')}
+              disabled={discoverScanning}
+              style={{ flex: 1, maxWidth: 320 }}
+            />
+          </div>
           {discoverScanning && discoverProgress && (
             <div className="inspect-scan-progress">
               <div className="inspect-scan-progress-bar" style={{ width: `${Math.min(100, Math.round((discoverProgress.scanned / Math.max(1, discoverProgress.total)) * 100))}%` }} />
-              <span>
-                {discoverPhase === 'alive' ? t('检测在线设备') : t('探测服务端口')}… {discoverProgress.scanned}/{discoverProgress.total}
-              </span>
+              <span>{t('扫描中')}… {discoverProgress.scanned}/{discoverProgress.total}</span>
             </div>
           )}
           {(discoverScanning || discoverFinished || Object.keys(discoverRows).length > 0) && (
@@ -10666,12 +10682,13 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
                     <th title="23">Telnet</th>
                     <th title="80">HTTP</th>
                     <th title="443">HTTPS</th>
+                    <th>{t('自定义')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.keys(discoverRows).length === 0 && (
                     <tr>
-                      <td className="inspect-discover-empty" colSpan={9}>
+                      <td className="inspect-discover-empty" colSpan={10}>
                         {discoverError
                           ? `${t('扫描失败')}：${discoverError}`
                           : discoverFinished
@@ -10692,6 +10709,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
                         ) : (
                           <span className="scan-port-off">✗</span>
                         )
+                      const custom = parseCustomPorts(discoverCustomPorts)
                       return (
                         <tr key={ip}>
                           <td className="mono">{ip}</td>
@@ -10703,6 +10721,21 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
                           <td>{mark(23)}</td>
                           <td>{mark(80)}</td>
                           <td>{mark(443)}</td>
+                          <td>
+                            {custom.length === 0 ? (
+                              '-'
+                            ) : (
+                              <span className="inspect-custom-ports">
+                                {custom.map((port) => (
+                                  <span key={port}>
+                                    {port}
+                                    {mark(port)}
+                                    {'  '}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}

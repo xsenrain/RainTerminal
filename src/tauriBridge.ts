@@ -197,12 +197,17 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       const seg = startIp.split('.').slice(0, 3).join('.')
       const startLast = Number(startIp.split('.')[3] ?? 1)
       const endLast = Number(endIp.split('.')[3] ?? 254)
+      const custom: number[] = Array.isArray(args.customPorts)
+        ? (args.customPorts as number[]).filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535)
+        : []
       const list: { ip: string; name: string; open_ports: number[] }[] = []
       for (let n = startLast; n <= Math.min(endLast, startLast + 4); n++) {
+        const base = n % 3 === 0 ? [22, 80] : n % 2 === 0 ? [23, 3389] : [22]
+        const open = custom.filter((p) => p % 2 === 1)
         list.push({
           ip: `${seg}.${n}`,
           name: n % 2 === 0 ? `HOST-${n}` : '',
-          open_ports: n % 3 === 0 ? [22, 80] : n % 2 === 0 ? [23, 3389] : [22],
+          open_ports: [...base, ...open],
         })
       }
       list.forEach((row, index) => {
