@@ -67,10 +67,10 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
         y: {
           range: (_self, dataMin, dataMax) => {
             if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMax <= dataMin) return [0, 100]
-            const pad = Math.max(2, (dataMax - dataMin) * 0.2)
-            const lo = Math.max(0, dataMin - pad)
-            const hi = Math.min(100, dataMax + pad)
-            return hi - lo < 8 ? [Math.max(0, lo - 4), Math.min(100, hi + 4)] : [lo, hi]
+            const span = Math.max(1, dataMax - dataMin)
+            const lo = Math.max(0, dataMin - span * 0.04)
+            const hi = Math.min(100, dataMax + span * 0.04)
+            return hi - lo < 2 ? [Math.max(0, lo - 1), Math.min(100, hi + 1)] : [lo, hi]
           },
         },
       },
@@ -188,7 +188,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
     const times = new Float64Array(n)
     const vals = new Float64Array(n)
     for (let i = 0; i < n; i++) {
-      times[i] = t0 + i * SAMPLE_MS
+      times[i] = (t0 + i * SAMPLE_MS) / 1000
       const raw = values[i]
       vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
     }

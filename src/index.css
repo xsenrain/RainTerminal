@@ -3654,7 +3654,7 @@ body:has(.app-toast) .file-download-progress {
 
 .monitor-chart {
   position: relative;
-  min-height: 216px;
+  min-height: 320px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
