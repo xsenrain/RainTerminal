@@ -6324,12 +6324,17 @@ function toggleWidgetSessionLog(sessionId: string, server: ServerProfile | undef
       .catch((error) => onToast(`停止日志失败：${String(error)}`))
     return
   }
-  void invoke<string | null>('choose_log_directory')
-    .then((dir) => {
-      if (!dir) return null
-      const host = server?.host || server?.serialPort || 'device'
-      const timestamp = formatLogTimestamp(new Date())
-      return invoke<string>('session_log_start', { sessionId, dir, name: `${host}-${timestamp}` })
+  const host = server?.host || server?.serialPort || 'device'
+  const defaultName = `${host}-${formatLogTimestamp(new Date())}.log`
+  void invoke<string | null>('choose_log_file', { defaultName })
+    .then((fullPath) => {
+      if (!fullPath) return null
+      const lastSep = Math.max(fullPath.lastIndexOf('\\'), fullPath.lastIndexOf('/'))
+      const dir = lastSep > 0 ? fullPath.slice(0, lastSep) : '.'
+      const fileName = lastSep >= 0 ? fullPath.slice(lastSep + 1) : fullPath
+      if (!fileName) return null
+      const baseName = fileName.toLowerCase().endsWith('.log') ? fileName.slice(0, -4) : fileName
+      return invoke<string>('session_log_start', { sessionId, dir, name: baseName })
     })
     .then((path) => {
       if (!path) return

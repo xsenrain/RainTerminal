@@ -185,7 +185,6 @@ pub async fn serial_connect(
             request.stop_bits,
             request.parity,
             request.flow_control,
-            request.log_enabled,
         ) {
             let _ = app_clone.emit(
                 "serial:error",
@@ -209,7 +208,6 @@ fn serial_session_run(
     stop_bits: u8,
     parity: String,
     flow_control: String,
-    log_enabled: bool,
 ) -> Result<(), String> {
     let mut builder = serialport::new(port_name.as_str(), baud_rate);
     builder = builder
@@ -289,9 +287,7 @@ fn serial_session_run(
         health.total_read.fetch_add(size, Ordering::Relaxed);
         health.last_read_ms.store(epoch_millis(), Ordering::Relaxed);
 
-        if log_enabled {
-            session_log_write_bytes(&session_id, &buffer[..size]);
-        }
+        session_log_write_bytes(&session_id, &buffer[..size]);
 
         let text = String::from_utf8_lossy(&buffer[..size]).into_owned();
         output_buffer.push_str(&text);
@@ -304,9 +300,7 @@ fn serial_session_run(
         flush_serial_output(&app, &session_id, &mut output_buffer, &mut last_output_flush);
     }
 
-    if log_enabled {
-        session_log_close(&session_id);
-    }
+    session_log_close(&session_id);
     {
         let mut guard = sessions
             .lock()

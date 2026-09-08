@@ -1998,6 +1998,20 @@ async fn choose_log_directory() -> Result<Option<String>, String> {
     .await
 }
 
+/// 保存会话日志：系统"另存为"对话框（路径 + 可编辑文件名），返回完整路径
+#[tauri::command]
+async fn choose_log_file(default_name: String) -> Result<Option<String>, String> {
+    run_blocking(move || {
+        Ok(rfd::FileDialog::new()
+            .set_title("保存会话日志")
+            .set_file_name(&default_name)
+            .add_filter("日志文件", &["log"])
+            .save_file()
+            .map(|path| path.to_string_lossy().into_owned()))
+    })
+    .await
+}
+
 /// 连接后按需开启会话日志（不依赖设备配置），返回实际日志文件路径
 #[tauri::command]
 fn session_log_start(session_id: String, dir: Option<String>, name: String) -> Result<Option<String>, String> {
@@ -5551,6 +5565,12 @@ fn ssh_write(state: State<SshSessions>, session_id: String, data: String) -> Res
     Ok(())
 }
 
+/// 前端通用终端输入统一走 {protocol}_session_write，SSH 使用此别名
+#[tauri::command]
+fn ssh_session_write(state: State<SshSessions>, session_id: String, data: String) -> Result<(), String> {
+    ssh_write(state, session_id, data)
+}
+
 #[tauri::command]
 fn ssh_session_health(
     state: State<SshSessions>,
@@ -7442,6 +7462,7 @@ pub fn run() {
             choose_file_download_destination,
             choose_file_upload_sources,
             choose_log_directory,
+            choose_log_file,
             session_log_start,
             session_log_stop,
             choose_ssh_private_key,
@@ -7494,6 +7515,7 @@ pub fn run() {
             rdp_cancel_file_transfer,
             ssh_connect,
             ssh_write,
+            ssh_session_write,
             ssh_session_health,
             ssh_resize,
             ssh_disconnect,

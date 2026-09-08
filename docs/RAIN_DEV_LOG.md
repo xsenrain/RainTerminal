@@ -1076,3 +1076,20 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 记录中再次点击 → 停止保存并 toast 提示日志路径
 - 记录状态与标题栏日志按钮共享（remoteTerminalLogStore），两处入口行为一致
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 会话日志三连修复（名称重复 / 日志空 / ssh_session_write not found）
+
+1. 名称重复：session_log_open 不再强制追加 _{时间戳}，文件名 = 用户命名原样 + .log
+   - 之前前端传 IP-时间戳，后端又加 _YYYYmmdd_HHMMSS → 如 101.43.10.51-20260908221536_20260908_221536.log
+   - 修复后严格按用户命名：101.43.10.51-20260908221536.log
+2. 日志空内容：Telnet/Serial 读循环原用连接时固定 log_enabled 标志（前端连接时固定 false）
+   - 动态开启会话日志后 registry 已激活但读循环不写 → 文件空
+   - 改为无条件调用 session_log_write_bytes（内部查 registry，未激活自动跳过）；SSH 原本就是 registry 机制
+   - 清理 telnet/serial run 函数不再使用的 log_enabled 参数
+3. ssh_session_write not found：后端只注册了 ssh_write，前端通用调用 {protocol}_session_write
+   - 新增 ssh_session_write 命令（包装 ssh_write）并注册
+4. 保存方式：菜单保存改为系统"另存为"对话框（choose_log_file）——路径可选、文件名可编辑
+   - 默认名 {IP或串口}-{YYYYMMDDHHMMSS}.log，用户可改
+- 验证：npm build + cargo check 零警告

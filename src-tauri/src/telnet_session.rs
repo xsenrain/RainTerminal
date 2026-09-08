@@ -262,7 +262,6 @@ pub async fn telnet_connect(
             request.port,
             request.cols,
             request.rows,
-            request.log_enabled,
         ) {
             let _ = app_clone.emit(
                 "telnet:error",
@@ -284,7 +283,6 @@ fn telnet_session_run(
     port: u16,
     cols: u32,
     rows: u32,
-    log_enabled: bool,
 ) -> Result<(), String> {
     let addrs = (host.as_str(), port)
         .to_socket_addrs()
@@ -393,9 +391,7 @@ fn telnet_session_run(
             drop(w);
         }
 
-        if log_enabled {
-            session_log_write_bytes(&session_id, &plain);
-        }
+        session_log_write_bytes(&session_id, &plain);
 
         if !plain.is_empty() {
             let text = String::from_utf8_lossy(&plain).into_owned();
@@ -410,9 +406,7 @@ fn telnet_session_run(
         flush_telnet_output(&app, &session_id, &mut output_buffer, &mut last_output_flush, &health);
     }
 
-    if log_enabled {
-        session_log_close(&session_id);
-    }
+    session_log_close(&session_id);
     {
         let mut guard = sessions.lock().map_err(|_| "Telnet 会话存储锁定失败".to_string())?;
         guard.remove(&session_id);

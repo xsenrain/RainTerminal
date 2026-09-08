@@ -59,8 +59,7 @@ pub fn session_log_open(
                 .join("logs")
         });
     std::fs::create_dir_all(&base).map_err(|e| format!("日志目录创建失败: {e}"))?;
-    let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let file_name = format!("{}_{}.log", safe_log_name(name), stamp);
+    let file_name = format!("{}.log", safe_log_name(name));
     let path = base.join(file_name);
     let file = OpenOptions::new()
         .create(true)
