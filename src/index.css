@@ -3603,7 +3603,7 @@ body:has(.app-toast) .file-download-progress {
 .mrc-title {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-secondary, #aeb8c8);
   letter-spacing: 0.4px;
 }
 .mrc-value {
@@ -3619,7 +3619,7 @@ body:has(.app-toast) .file-download-progress {
 }
 .mrc-sub {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-tertiary, #737d90);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -3629,7 +3629,7 @@ body:has(.app-toast) .file-download-progress {
   display: flex;
   justify-content: space-between;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--text-disabled, #444c5c);
   margin-top: 2px;
 }
 .mini-spark {
@@ -3649,7 +3649,7 @@ body:has(.app-toast) .file-download-progress {
 }
 .mini-spark .mini-legend text {
   font-size: 7px;
-  fill: rgba(255, 255, 255, 0.35);
+  fill: var(--text-disabled, #444c5c);
 }
 
 .monitor-chart {
@@ -3694,9 +3694,10 @@ body:has(.app-toast) .file-download-progress {
 }
 
 .monitor-sparkline {
-  width: 100%;
+  width: min(100%, 560px);
   aspect-ratio: 260 / 120;
   min-height: 120px;
+  margin: 0 auto;
   display: block;
   touch-action: none;
 }
@@ -3707,7 +3708,7 @@ body:has(.app-toast) .file-download-progress {
 
 .monitor-sparkline polyline {
   fill: none;
-  stroke: rgba(255,255,255,0.07);
+  stroke: var(--border-soft, rgba(226,238,255,0.045));
   stroke-width: 1;
 }
 

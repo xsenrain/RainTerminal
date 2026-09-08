@@ -768,3 +768,12 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 面积渐变填充（linearGradient），曲线更精致
 - 卡片背景主题化（var(--surface-1)）
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 监控 v5：浅色主题适配 + 25 分钟历史 + 大图尺寸封顶
+
+- 浅色外观白字不可见修复：监控卡片/图表全部硬编码 rgba(255,255,255) 文字改为主题 CSS 变量（--text-secondary/tertiary/disabled、--border-soft），深浅皮肤自适应
+- 历史采样点 60 → 750（2 秒/点 × 25 分钟，用户要求）
+- 大图尺寸封顶：svg 宽度 min(100%, 560px) 居中，宽屏下不再等比放大到 400px 高
+- 验证：npm build 通过
