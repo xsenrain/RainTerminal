@@ -92,7 +92,14 @@ function MonitorUplot({
       padding: [12, 10, 6, 6],
       scales: {
         x: { time: true },
-        y: isRate ? {} : { range: [0, 100] },
+        y: isRate
+          ? {
+              range: (_self, _dataMin, dataMax) => {
+                const m = Number.isFinite(dataMax) && dataMax > 0 ? dataMax : 1
+                return [0, m * 1.15]
+              },
+            }
+          : { range: [0, 100] },
       },
       series: [
         {},
@@ -250,13 +257,6 @@ function MonitorUplot({
     }
     if (isRate && vals2) {
       plot.setData([times as unknown as number[], vals as (number | null)[], vals2 as (number | null)[]] as unknown as uPlot.AlignedData)
-      // Y 轴 0 到数据最大值（真实，不放大）
-      let maxV = 0
-      for (let i = 0; i < n; i++) {
-        if (vals[i] != null && vals[i]! > maxV) maxV = vals[i]!
-        if (vals2[i] != null && vals2[i]! > maxV) maxV = vals2[i]!
-      }
-      plot.setScale('y', { min: 0, max: maxV > 0 ? maxV * 1.15 : 1 })
     } else {
       plot.setData([times as unknown as number[], vals as (number | null)[]] as unknown as uPlot.AlignedData)
     }
