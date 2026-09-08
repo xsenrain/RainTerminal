@@ -1049,3 +1049,20 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 补全 WONT/DONT 应答：WONT X → DONT X、DONT X → WONT X（RFC 854 规范，登录阶段 ECHO 关闭确认）
 - 说明：CentOS telnet-server 登录阶段（用户名+密码）默认不回显是安全机制，mobaxterm 同样如此，非程序缺陷；登录成功后服务器恢复回显，修复后输入正常可见
 - 验证：cargo check 通过
+
+---
+
+## 2026-09-08 · Serial 串口全链路审计（无真实设备环境下代码级验证）
+
+审计结论：
+- 前端 serial_connect 已包 request（portName/baudRate/dataBits/stopBits/parity/flowControl 与后端 SerialConnectRequest camelCase 匹配）
+- serial_session_write/stop/health 平铺参数正确；serial 无 resize 命令（前端已跳过）
+- 事件字段 snake_case 已对齐（与 Telnet 同批修复）
+- 非 SSH 设备不自动重连（scheduleRemoteReconnect 直接清状态）
+- 表单齐全（串口/波特率/数据位 5-8/停止位/校验 none-odd-even/流控 none-hardware-software）
+
+修复：
+- 串口字段由下拉 select 改为 input+datalist：可下拉选择，也可手动输入（枚举不到/USB 转串口未识别时手动填 COM 号）
+- 已知边缘情况（不修，记录）：连接后瞬间断开存在竞态，后端 stop 找不到 handle 时会话稍后建立；概率极低，下次 stop 可清理
+
+验证：npm build 通过；后端 cargo check 此前通过

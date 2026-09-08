@@ -14000,15 +14000,18 @@ function ServerModal({
           <>
             <label className="field">
               <span>{t('串口')}</span>
-              <select
+              <input
+                list="serial-port-options"
                 value={form.serialPort ?? ''}
                 onChange={(event) => setForm({ ...form, serialPort: event.target.value })}
-              >
-                <option value="">{t('选择串口')}</option>
+                placeholder={t('选择或输入串口号，如 COM3')}
+                autoComplete="off"
+              />
+              <datalist id="serial-port-options">
                 {serialPorts.map((name) => (
-                  <option key={name} value={name}>{name}</option>
+                  <option key={name} value={name} />
                 ))}
-              </select>
+              </datalist>
             </label>
             <div className="field-grid">
               <EditableField
