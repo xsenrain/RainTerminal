@@ -141,15 +141,16 @@ function MonitorUplot({
           stroke: theme.textTer,
           grid: { stroke: theme.border, width: 1 },
           ticks: { stroke: theme.border },
-          size: 52,
+          size: isRate ? 6 : 52,
           font: '11px "Segoe UI Variable", "Inter", system-ui, sans-serif',
-          values: (_self, ticks) => ticks.map((t) => (isRate ? fmtRate(t) : `${Math.round(t)}%`)),
+          values: isRate ? () => [] : (_self, ticks) => ticks.map((t) => `${Math.round(t)}%`),
         },
       ],
       cursor: {
         x: true,
         y: true,
         points: { size: 6, stroke: '#ffffff', width: 2, fill: accent },
+        focus: { prox: 40 },
         drag: { setScale: false, x: false, y: false },
       },
       legend: { show: false },
@@ -189,7 +190,6 @@ function MonitorUplot({
         ],
         setScale: [
           (self: uPlot) => {
-            if (tip) tip.style.opacity = '0'
             void self
           },
         ],

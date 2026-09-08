@@ -914,3 +914,14 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 修复：只要时间戳存在就显示 tooltip，null 值显示 0 B/s 或 0%，双系列都展示
 - Y轴 range 函数保持 [0, 数据峰值*1.15] 自动跟随峰值
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 网络图tooltip吸附优化 + Y轴刻度取消
+
+- tooltip 不显示根因：focus.prox 默认8px，20分钟窗口内数据点稀疏
+  (24秒12个点间距~75px)，鼠标大部分区域吸附不到点 → 调大到40px
+- 数据每2秒更新触发 setScale hook 会清掉 tooltip → 移除该隐藏逻辑
+- 网络页 Y 轴刻度文字取消(用户要求)，size 6 保留 grid 网格线；
+  其他指标页保持百分比刻度
+- 验证：npm build 通过
