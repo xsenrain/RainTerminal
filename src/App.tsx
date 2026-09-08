@@ -9113,7 +9113,7 @@ function MachineMonitorWidget({
 
   useEffect(() => {
     if (!active || !remoteReady) return
-    const interval = remoteArgs ? 60000 : 20000
+    const interval = 2000
     const initialDelay = (
       remoteArgs
         ? AUX_WIDGET_MOUNT_DELAY_MS + REMOTE_AUX_AFTER_CONNECT_DELAY_MS
@@ -9272,7 +9272,7 @@ function ProcessManagerWidget({
   useEffect(() => {
     if (!active || !remoteReady) return
     const initial = window.setTimeout(refresh, remoteArgs ? AUX_WIDGET_MOUNT_DELAY_MS : 80)
-    const timer = window.setInterval(refresh, remoteArgs ? 45000 : 15000)
+    const timer = window.setInterval(refresh, 2000)
     return () => {
       window.clearTimeout(initial)
       window.clearInterval(timer)

@@ -715,3 +715,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 根因：src/App.tsx 前端 APP_VERSION 为源码硬编码 '1.1.0-dev'，发布时仅改了 package.json / tauri.conf.json / Cargo.toml，漏改该常量，导致 1.0.2 安装包界面始终显示 1.1.0-dev
 - 修复：APP_VERSION 改为 '1.0.2'，重新构建安装包（SHA-256 cd1a8344…，6,000,762 B）
 - 同步：latest.json 更新新 SHA-256；GitHub Release v1.0.2 资产替换为新安装包；dist 验证无 dev 版本字符串
+
+---
+
+## 2026-09-08 · 阶段B：监控实时刷新（2 秒）
+
+- 机器监控刷新间隔：远程 60s / 本地 20s → 2s
+- 系统进程刷新间隔：远程 45s / 本地 15s → 2s
+- 后端 remote_system_stats 缓存 TTL：10s → 2s（会话复用 + 缓存去重，同主机多窗口 2s 内只采集一次）
+- 用户反馈 1s 过频，最终定为 2s
+- 验证：npm run build + cargo check 通过

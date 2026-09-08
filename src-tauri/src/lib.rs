@@ -5234,7 +5234,7 @@ fn remote_system_stats_cached(
     let cache_key = format!("{user}@{host}:{port}");
     if let Ok(guard) = cache.lock() {
         if let Some((captured_at, stats)) = guard.get(&cache_key) {
-            if captured_at.elapsed() < Duration::from_millis(10_000) {
+            if captured_at.elapsed() < Duration::from_millis(2_000) {
                 return Ok(stats.clone());
             }
         }
@@ -5243,7 +5243,7 @@ fn remote_system_stats_cached(
     let _permit = RemoteAuxLimiter::from_parts(in_flight, limit).acquire()?;
     if let Ok(guard) = cache.lock() {
         if let Some((captured_at, stats)) = guard.get(&cache_key) {
-            if captured_at.elapsed() < Duration::from_millis(10_000) {
+            if captured_at.elapsed() < Duration::from_millis(2_000) {
                 return Ok(stats.clone());
             }
         }
