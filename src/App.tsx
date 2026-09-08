@@ -10647,7 +10647,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
 
       <div className="inspect-tool-panel">
         <div className="inspect-tool-pane" style={{ display: activeTool === 'discover' ? 'flex' : 'none' }}>
-          <div className="inspect-toolbox-card">
+          <div className={`inspect-toolbox-card ${discoverScanning || discoverFinished || Object.keys(discoverRows).length > 0 ? 'inspect-card-fill' : ''}`}>
             <div className="inspect-toolbox-card-head">
               <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
@@ -10914,7 +10914,7 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
   }
 
   return (
-    <div className="inspect-toolbox-card">
+    <div className={`inspect-toolbox-card ${scanning || finished || Object.keys(rows).length > 0 ? 'inspect-card-fill' : ''}`}>
       <div className="inspect-toolbox-card-head">
         <Wifi size={15} />
         <strong>{t('端口扫描')}</strong>
@@ -11220,7 +11220,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const summaryIps = Object.keys(summary).sort()
 
   return (
-    <div className="inspect-toolbox-card">
+    <div className={`inspect-toolbox-card ${running || finished || summaryIps.length > 0 ? 'inspect-card-fill' : ''}`}>
       <div className="inspect-toolbox-card-head">
         <Activity size={15} />
         <strong>{t('批量 Ping')}</strong>

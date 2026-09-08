@@ -7718,6 +7718,9 @@ body.native-window-drag-active .monitor-tabs button {
   flex-direction: column;
   min-height: 0;
 }
+.inspect-toolbox-card.inspect-card-fill {
+  flex: 1 1 auto;
+}
 .inspect-fill-scroll {
   flex: 1 1 auto;
   min-height: 0;
