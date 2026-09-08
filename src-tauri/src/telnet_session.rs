@@ -306,6 +306,7 @@ fn telnet_session_run(
             last_error
         }
     })?;
+    println!("[telnet] tcp connected session={session_id} host={host}:{port}");
     let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_nodelay(true);
@@ -342,6 +343,7 @@ fn telnet_session_run(
             message: "connected".into(),
         },
     );
+    println!("[telnet] emitted connected session={session_id}");
 
     let mut buffer = [0_u8; 32768];
     let mut output_buffer = String::with_capacity(TERMINAL_EVENT_FLUSH_BYTES);

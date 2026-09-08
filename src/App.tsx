@@ -865,6 +865,13 @@ function hasConnectionAuthentication(server?: ServerProfile) {
   return hasSshAuthentication(server)
 }
 
+function serverAddressLabel(server?: ServerProfile) {
+  if (!server) return '设备配置缺失'
+  if (server.protocol === 'serial') return server.serialPort || '串口未配置'
+  if (server.protocol === 'telnet') return `${server.host}:${server.port}`
+  return `${server.user}@${server.host}:${server.port}`
+}
+
 function sshAuthenticationHint(server: ServerProfile) {
   if (server.auth === 'Agent') return 'SSH Agent'
   if (server.auth === 'Key') return server.privateKeyPath?.trim() ? '私钥' : '需要私钥'
@@ -4693,7 +4700,7 @@ function Workbench({
     const active = widget.id === activeWidgetId
     const magnified = widget.id === workspace.magnifiedWidgetId
     const addressLabel = isRemoteTerminal
-      ? (widgetServer ? `${widgetServer.user}@${widgetServer.host}:${widgetServer.port}` : '服务器配置缺失')
+      ? serverAddressLabel(widgetServer)
       : isRemoteDesktop
         ? (widget.remoteDesktop
             ? `${widget.remoteDesktop.protocol.toUpperCase()} ${widget.remoteDesktop.host}:${widget.remoteDesktop.port}`
@@ -5482,7 +5489,7 @@ export function LegacyWorkbench({
                     : 'connected'
                   const active = widget.id === activeLayoutWidget?.id
                   const addressLabel = isRemoteTerminal
-                    ? (widgetServer ? `${widgetServer.user}@${widgetServer.host}:${widgetServer.port}` : '服务器配置缺失')
+                    ? serverAddressLabel(widgetServer)
                     : widget.serverId && widgetServer
                       ? `${widgetServer.user}@${widgetServer.host}:${widgetServer.port}`
                       : widget.type === 'local-terminal'
@@ -6981,6 +6988,7 @@ function RemoteTerminalWidget({
           total_written: 0,
         })
         fitRemoteTerminal('connected')
+        appendRemoteTerminalOutput(`\r\n[${protocolLabel} 已连接] 等待设备输出...\r\n`)
         if (server) reportRemoteStatus(server.id, 'connected', `${server.name} 已连接`)
       }).catch(() => () => undefined),
       listen<SshEventPayload>(`${eventPrefix}:data`, (event) => {
@@ -7011,7 +7019,7 @@ function RemoteTerminalWidget({
       }).catch(() => () => undefined),
       listen<SshEventPayload>(`${eventPrefix}:error`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
-        const message = event.payload.message ?? 'SSH error'
+        const message = event.payload.message ?? `${protocolLabel} error`
         diag('ssh-event', `error server=${server?.host ?? 'unknown'} message=${message}`)
         if (message.toLowerCase().includes('resize')) return
         if (/authentication|password auth|permission denied/i.test(message)) reconnectBlockedRef.current = true

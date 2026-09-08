@@ -1016,3 +1016,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 后端命令参数为 request 结构体（非平铺），前端 invoke 需以 { request: {...} } 包裹
 - 之前平铺传参导致 "missing required key request"，Telnet/Serial 连接直接失败
 - 修复 startTerminalSession 两处调用，构建通过
+
+---
+
+## 2026-09-08 · 修复：Telnet 地址显示 root@ 与连接反馈不明确
+
+- workbench 布局节点地址标签按协议显示：Telnet=host:port、Serial=串口、SSH=user@host:port（去掉多余的 root@）
+- connected 事件后终端明确追加 [Telnet 已连接] 提示（静默设备也有反馈）
+- error 事件 fallback 文案去 SSH 字样
+- 后端 telnet 连接/事件输出诊断（dev 控制台可见 [telnet] 日志，用于定位连接链路）
+- 验证：npm build + cargo check 通过
