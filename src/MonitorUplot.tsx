@@ -192,17 +192,16 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
       vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : null
     }
     plot.setData([times as unknown as number[], vals as (number | null)[] as unknown as number[]])
-    // 强制 y 轴贴合数据（铺满图高）
+    // 强制 y 轴贴合数据（铺满图高），最小跨度 10% 防止刻度重叠
     const finite = vals.filter((v): v is number => v !== null && Number.isFinite(v))
     if (finite.length >= 2) {
       const dMin = Math.min(...finite)
       const dMax = Math.max(...finite)
-      if (dMax > dMin) {
-        const span = dMax - dMin
-        const lo = Math.max(0, dMin - span * 0.04)
-        const hi = Math.min(100, dMax + span * 0.04)
-        plot.setScale('y', { min: lo, max: hi })
-      }
+      const center = (dMin + dMax) / 2
+      const span = Math.max(10, dMax - dMin)
+      const lo = Math.max(0, center - span / 2 - span * 0.04)
+      const hi = Math.min(100, center + span / 2 + span * 0.04)
+      plot.setScale('y', { min: lo, max: hi })
     }
     // X 轴固定 20 分钟窗口（数据从右往左增长）
     plot.setScale('x', { min: nowSec - 1200, max: nowSec })
