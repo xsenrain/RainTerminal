@@ -2675,8 +2675,10 @@ fn local_system_stats_sync(
 }
 
 fn local_connection_counts() -> (u32, u32) {
-    let output = std::process::Command::new("netstat")
-        .args(["-ano"])
+    let mut command = std::process::Command::new("netstat");
+    command.args(["-ano"]);
+    hide_command_window(&mut command);
+    let output = command
         .output()
         .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
         .unwrap_or_default();

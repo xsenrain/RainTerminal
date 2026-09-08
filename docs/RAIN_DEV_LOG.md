@@ -1176,3 +1176,15 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - CHANGELOG 新增 1.0.3 条目
 - latest.json 更新 1.0.3（sha256/size/releaseUrl）
 - NSIS 已缓存，构建成功 RainTerminal_1.0.3_x64-setup.exe（6110537 字节）
+
+---
+
+## 2026-09-08 · 修复本地监控频繁弹出cmd窗口
+
+问题：本机监控每 2 秒采集时闪一下 cmd 窗口后消失
+根因：local_connection_counts 用 netstat -ano 统计 TCP/UDP 连接数
+- netstat 是控制台程序，GUI(无控制台)进程直接 spawn 会每次新建控制台窗口
+- 监控 2 秒一采 → 频繁弹窗
+修复：spawn 前调用 hide_command_window（CREATE_NO_WINDOW 0x08000000）
+- 进程列表用 sysinfo 无外部命令；netstat 是唯一监控外部命令调用点
+- 验证：cargo check 零警告
