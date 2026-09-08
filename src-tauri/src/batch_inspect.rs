@@ -1210,7 +1210,7 @@ fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
         if handle.is_null() {
             return false;
         }
-        let ip_net = u32::from_be_bytes(ip.octets());
+        let ip_net = u32::from_le_bytes(ip.octets()); // IPAddr=网络字节序, x86小端须 from_le_bytes 使内存为大端排列
         let data: [u8; 16] = *b"RainTerminalPing";
         let reply_size = std::mem::size_of::<IcmpEchoReply>() + data.len() + 8;
         let mut reply: Vec<u8> = vec![0u8; reply_size];
@@ -1225,7 +1225,14 @@ fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
             timeout_ms,
         );
         IcmpCloseHandle(handle);
-        sent > 0
+        // 关键：必须同时满足 返回了回复 且 回复的 Status == IP_SUCCESS(0)。
+        // 仅凭 sent > 0 会把 ICMP "Destination Unreachable"（不存在的 IP 由网关回包）误判为在线。
+        if sent == 0 {
+            return false;
+        }
+        // ICMP_ECHO_REPLY.Status 在缓冲区偏移 4（ULONG, little-endian）
+        let status = u32::from_le_bytes([reply[4], reply[5], reply[6], reply[7]]);
+        status == 0
     }
 }
 
@@ -1370,4 +1377,21 @@ pub async fn scan_inspect_network(
     spawned
         .await
         .map_err(|e| format!("扫描线程异常: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icmp_loopback_is_up() {
+        assert!(ping_host(std::net::Ipv4Addr::LOCALHOST, 3000));
+    }
+
+    #[test]
+    fn icmp_test_net_is_down() {
+        let ip: std::net::Ipv4Addr = "192.0.2.1".parse().unwrap();
+        assert!(!ping_host(ip, 1500));
+    }
+
 }

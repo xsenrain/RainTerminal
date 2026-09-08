@@ -555,3 +555,17 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - **实现**：每 IP 一线程，10 秒窗口内循环（每轮 ping 300ms + TCP 全端口 200ms 并行，轮间间隔 200ms，约 15-20 轮）；一轮内打通立即上屏；提高慢启动/偶发丢包设备的捕获率
 - **UI**：描述文案标注"单次扫描最长 10 秒自动停止"
 - **验证**：npm run build 通过、cargo check 通过
+
+---
+
+## 2026-09-08 · 网段发现 V8.1：修复 ICMP 假阳性（与 MobaXterm 对齐）
+
+- **问题**：扫描结果多出大量 MobaXterm 不显示的 IP（对比 13 台 vs 3 台），系统 ping.exe 验证这些 IP 实为超时
+- **根因（两个叠加 bug）**：
+  1. IcmpSendEcho 对"Destination Unreachable"回复也返回 1，未检查 reply 的 Status 字段（须 == IP_SUCCESS(0)），不存在的 IP 被网关回包误判为在线
+  2. DestinationAddress 字节序错误：IPAddr 为网络字节序，x86 小端须 from_le_bytes 使内存大端排列，from_be_bytes 导致探测到错误地址
+- **修复**：检查 Status==0 + 修正字节序
+- **验证（真实运行）**：
+  - 用户网络对照测试：192.168.1.3/.5/.1 判在线、192.168.1.4/.20/.23/.24 判不在线，与系统 ping.exe 100% 一致
+  - 保留回归测试（cargo test）：127.0.0.1 通、192.0.2.1 不通，2 passed
+  - npm run build 通过
