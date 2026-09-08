@@ -1093,3 +1093,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 4. 保存方式：菜单保存改为系统"另存为"对话框（choose_log_file）——路径可选、文件名可编辑
    - 默认名 {IP或串口}-{YYYYMMDDHHMMSS}.log，用户可改
 - 验证：npm build + cargo check 零警告
+
+---
+
+## 2026-09-08 · 会话日志乱码 + 开始/停止状态可靠性
+
+1. 乱码：日志混入终端 ANSI 控制序列（颜色 \x1b[38;5;27m、光标定位 \x1b[0;0;H 等）
+   - 终端里正常显示，记事本打开就是 [0;0;root@... 这类乱码
+   - session_log_write / write_bytes 统一剥离 ANSI 转义序列后再写盘
+   - 支持 CSI（ESC[params final）与两字节 ESC 序列，丢弃孤立 ESC 与响铃
+2. 停止又保存：toggleWidgetSessionLog 增加 busy 防抖锁
+   - 快速重复点击 / 状态未同步时不再误触第二次"开始保存"
+   - session_log_start 返回空路径时明确 toast 失败（不静默）
+- 验证：npm build + cargo check 零警告

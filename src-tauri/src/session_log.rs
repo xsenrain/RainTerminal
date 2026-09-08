@@ -38,6 +38,57 @@ fn safe_log_name(value: &str) -> String {
     }
 }
 
+/// 剥离终端 ANSI 转义序列（颜色/光标定位等），保留纯文本字节。
+/// 支持 CSI（ESC [ ... final）与两字节 ESC 序列（ESC M 等）。
+fn strip_ansi_bytes(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len());
+    let mut i = 0;
+    while i < data.len() {
+        let b = data[i];
+        if b == 0x1b {
+            if i + 1 < data.len() && data[i + 1] == b'[' {
+                let mut j = i + 2;
+                let mut consumed = false;
+                while j < data.len() {
+                    let c = data[j];
+                    if (0x40..=0x7e).contains(&c) {
+                        i = j + 1;
+                        consumed = true;
+                        break;
+                    }
+                    if !c.is_ascii_digit()
+                        && c != b';'
+                        && c != b'?'
+                        && c != b'>'
+                        && c != b'!'
+                        && c != b'='
+                        && c != b' '
+                    {
+                        // 参数区出现非法字节：整段视为异常，丢弃到该字节
+                        i = j + 1;
+                        consumed = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !consumed {
+                    i = data.len(); // 未闭合，丢弃剩余
+                }
+            } else if i + 1 < data.len() && (0x40..=0x5f).contains(&data[i + 1]) {
+                i += 2;
+            } else {
+                i += 1; // 孤立 ESC
+            }
+        } else if b == 0x07 {
+            i += 1; // 丢弃响铃
+        } else {
+            out.push(b);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// 打开/关闭会话日志。enabled=false 时关闭并移除已有日志。
 /// dir 为空时默认使用程序运行目录下的 logs 目录。
 pub fn session_log_open(
@@ -81,10 +132,14 @@ pub fn session_log_write(session_id: &str, data: &str) {
     if data.is_empty() {
         return;
     }
+    let clean = strip_ansi_bytes(data.as_bytes());
+    if clean.is_empty() {
+        return;
+    }
     if let Ok(mut guard) = registry().lock() {
         if let Some(entry) = guard.get_mut(session_id) {
             if let Some(file) = entry.file.as_mut() {
-                let _ = file.write_all(data.as_bytes());
+                let _ = file.write_all(&clean);
                 let _ = file.flush();
             }
         }
@@ -95,10 +150,14 @@ pub fn session_log_write_bytes(session_id: &str, data: &[u8]) {
     if data.is_empty() {
         return;
     }
+    let clean = strip_ansi_bytes(data);
+    if clean.is_empty() {
+        return;
+    }
     if let Ok(mut guard) = registry().lock() {
         if let Some(entry) = guard.get_mut(session_id) {
             if let Some(file) = entry.file.as_mut() {
-                let _ = file.write_all(data);
+                let _ = file.write_all(&clean);
                 let _ = file.flush();
             }
         }

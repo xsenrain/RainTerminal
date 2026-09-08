@@ -6313,7 +6313,12 @@ function formatLogTimestamp(date: Date) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
 }
 
+const remoteTerminalLogBusy = new Set<string>()
+
 function toggleWidgetSessionLog(sessionId: string, server: ServerProfile | undefined, onToast: (message: string) => void) {
+  if (remoteTerminalLogBusy.has(sessionId)) return
+  remoteTerminalLogBusy.add(sessionId)
+  const finish = () => remoteTerminalLogBusy.delete(sessionId)
   const state = remoteTerminalLogStore.get(sessionId)
   if (state.recording) {
     void invoke('session_log_stop', { sessionId })
@@ -6322,6 +6327,7 @@ function toggleWidgetSessionLog(sessionId: string, server: ServerProfile | undef
         onToast(`已停止会话日志：${state.path}`)
       })
       .catch((error) => onToast(`停止日志失败：${String(error)}`))
+      .finally(finish)
     return
   }
   const host = server?.host || server?.serialPort || 'device'
@@ -6337,11 +6343,15 @@ function toggleWidgetSessionLog(sessionId: string, server: ServerProfile | undef
       return invoke<string>('session_log_start', { sessionId, dir, name: baseName })
     })
     .then((path) => {
-      if (!path) return
+      if (!path) {
+        onToast('会话日志开启失败：未取得日志路径')
+        return
+      }
       remoteTerminalLogStore.set(sessionId, { recording: true, path })
       onToast(`会话日志已开始保存：${path}`)
     })
     .catch((error) => onToast(`开启日志失败：${String(error)}`))
+    .finally(finish)
 }
 
 function RemoteTerminalLogButton({ sessionId, server }: { sessionId: string; server?: ServerProfile }) {
