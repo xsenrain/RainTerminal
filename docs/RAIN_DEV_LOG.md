@@ -904,3 +904,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 修复1：cleanup 加 wrap.replaceChildren() 清空容器，杜绝旧实例残留
 - 修复2：MutationObserver 去掉 'style' 监听(避免频繁重建触发双实例)
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 网络图tooltip修复（hover节点显示上传/下载）
+
+- 根因：hover 节点时若该点上传为 null(空数据) 直接隐藏整个 tooltip，
+  导致"节点不显示这个时间点的上传与下载"
+- 修复：只要时间戳存在就显示 tooltip，null 值显示 0 B/s 或 0%，双系列都展示
+- Y轴 range 函数保持 [0, 数据峰值*1.15] 自动跟随峰值
+- 验证：npm build 通过
