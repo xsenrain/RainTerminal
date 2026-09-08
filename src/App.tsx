@@ -11073,8 +11073,6 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [summary, setSummary] = useState<Record<string, PingSummary>>({})
   const [detail, setDetail] = useState<Record<string, { hostname: string; rows: PingBatchRow[] }>>({})
   const [selectedIp, setSelectedIp] = useState<string | null>(null)
-  const [doneCount, setDoneCount] = useState(0)
-  const [hostTotal, setHostTotal] = useState(0)
   const [errors, setErrors] = useState<string[]>([])
   const [finished, setFinished] = useState(false)
 
@@ -11130,9 +11128,6 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
       }).catch(() => () => undefined),
       listen<{ host: string; message: string }>('ping-batch-error', (event) => {
         setErrors((prev) => (prev.includes(event.payload.host) ? prev : [...prev, event.payload.host]))
-      }).catch(() => () => undefined),
-      listen<{ ip: string; left: number }>('ping-batch-done', () => {
-        setDoneCount((prev) => prev + 1)
       }).catch(() => () => undefined),
     ]
     return () => {
@@ -11190,8 +11185,6 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
     setSummary({})
     setDetail({})
     setSelectedIp(null)
-    setDoneCount(0)
-    setHostTotal(hosts.length)
     runningRef.current = true
     if (!monitor) {
       await runOneRound(hosts, n)
@@ -11200,13 +11193,15 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
       setFinished(true)
       return
     }
-    // 持续监控：每 1 秒一轮（每台 1 次探测），本轮完成后再隔 1s 起下一轮
+    // 持续监控：以轮开始为基准固定 1 秒周期（探测耗时从等待中扣除），不通主机也不会把间隔拖成 2 秒
     const tick = async () => {
       if (!runningRef.current) return
+      const roundStart = Date.now()
       await runOneRound(hosts, 1)
-      if (runningRef.current) {
-        monitorTimerRef.current = window.setTimeout(() => void tick(), 1000)
-      }
+      if (!runningRef.current) return
+      const elapsed = Date.now() - roundStart
+      const wait = Math.max(0, 1000 - elapsed)
+      monitorTimerRef.current = window.setTimeout(() => void tick(), wait)
     }
     await tick()
   }
@@ -11218,6 +11213,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const avgMs = (row: PingSummary) => (row.ok > 0 ? (row.rttSum / row.ok).toFixed(1) : '-')
 
   const summaryIps = Object.keys(summary).sort()
+  const totalPing = summaryIps.reduce((acc, ip) => acc + summary[ip].ok + summary[ip].fail, 0)
 
   return (
     <div className="inspect-toolbox-card">
@@ -11259,7 +11255,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
           </label>
           <button className="utility-primary-button compact" type="button" onClick={() => (running ? stopPing() : void startPing())}>
             <RefreshCw size={13} />
-            {running ? `${t('停止')} ${doneCount}/${hostTotal}` : t('开始探测')}
+            {running ? `${t('停止')} ${totalPing}` : t('开始探测')}
           </button>
         </div>
       </div>
