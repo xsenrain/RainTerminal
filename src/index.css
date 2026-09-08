@@ -7620,3 +7620,72 @@ body.native-window-drag-active .monitor-tabs button {
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12.5px;
 }
+
+/* ============ 小工具：页头 + 批量 Ping ============ */
+.inspect-toolbox-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inspect-toolbox-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent, #4f7cff);
+  color: #fff;
+}
+.inspect-batch-inputs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.inspect-batch-left {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inspect-batch-left textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-primary, #24292f);
+  font-size: 13px;
+  font-family: Consolas, 'Courier New', monospace;
+  box-sizing: border-box;
+  resize: vertical;
+  line-height: 1.5;
+}
+.inspect-batch-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.inspect-ping-row-selected {
+  background: var(--surface-2);
+  outline: 1px solid var(--accent, #4f7cff);
+}
+.inspect-ping-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inspect-ping-detail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.inspect-ping-detail-head strong {
+  font-size: 13.5px;
+}
+.inspect-ping-detail-head span {
+  font-size: 12px;
+  color: var(--text-secondary, #57606a);
+}

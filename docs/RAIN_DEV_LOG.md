@@ -592,3 +592,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 后端 ping_probe_tool：ping_host 改造为返回 RTT（读 IcmpEchoReply 偏移 8），网段发现调用处兼容
 - **子网计算器**（纯前端）：CIDR 输入 → 网络地址/广播地址/子网掩码/掩码二进制/通配符掩码/可用主机数/可用 IP 范围
 - **验证**：npm run build 通过；cargo test 2 passed（ICMP 回归不受影响）；i18n 中英文词条补充
+
+---
+
+## 2026-09-08 · 小工具迭代 V2：批量 Ping + 端口扫描精简 + 页头美化
+
+- **端口扫描**：只显示开放的端口（不再显示关闭端口行），结果更清爽
+- **Ping 工具 → 批量 Ping**（对标 PingInfoView）：
+  - 主机列表输入：每行一个 IP/域名，支持范围（如 192.168.1.1-10），最多 128 台
+  - 多主机并行探测（每主机一线程，独立 1-100 次），流式推送 ping-batch-row 实时更新主表
+  - 主表汇总：IP | 主机名 | 成功次数 | 失败次数 | 丢包率 | 平均用时 | 最后状态；点击任意行选中 → 下方显示该主机逐次明细（时间/状态/往返时间/TTL）
+  - 后端 ping_host_detailed：新增 TTL 读取（ICMP reply options 偏移 24）
+- **页头美化**：小工具页标题加图标徽标，更精致
+- **验证**：npm run build 通过；cargo test 2 passed

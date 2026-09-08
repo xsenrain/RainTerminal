@@ -262,6 +262,29 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
         maxMs: rtts.length ? Math.max(...rtts) : 0,
       } as T
     }
+    case 'ping_batch_tool': {
+      // 沙箱 mock：多主机并行 ping（每 4 次失败 1 次）
+      const hosts: string[] = Array.isArray(args.hosts) ? (args.hosts as string[]).map(String) : []
+      const count = Math.max(1, Math.min(100, Number(args.count) || 10))
+      hosts.forEach((host, hostIdx) => {
+        for (let seq = 1; seq <= count; seq++) {
+          const ok = (hostIdx + seq) % 4 !== 0
+          const rtt = ok ? 2 + ((hostIdx + seq * 7) % 24) : 1000
+          window.setTimeout(
+            () => emitSandbox('ping-batch-row', { ip: host, seq, ok, rttMs: rtt, ttl: ok ? 63 : 0 }),
+            hostIdx * 400 + seq * 500,
+          )
+        }
+      })
+      return hosts.map((host, hostIdx) => {
+        const rows: { seq: number; ok: boolean; rttMs: number; ttl: number; time: string }[] = []
+        for (let seq = 1; seq <= count; seq++) {
+          const ok = (hostIdx + seq) % 4 !== 0
+          rows.push({ seq, ok, rttMs: ok ? 2 + ((hostIdx + seq * 7) % 24) : 1000, ttl: ok ? 63 : 0, time: '12:00:00' })
+        }
+        return { ip: host, hostname: '', rows }
+      }) as T
+    }
     case 'batch_execute_inspect': {
       const devices = Array.isArray(args.devices) ? args.devices : []
       const commands = Array.isArray(args.commands) ? args.commands : []

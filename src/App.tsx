@@ -10951,19 +10951,16 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
                 </tr>
               )}
               {Object.entries(rows)
+                .filter(([, open]) => open)
                 .sort(([a], [b]) => Number(a) - Number(b))
-                .map(([portStr, open]) => {
+                .map(([portStr]) => {
                   const port = Number(portStr)
                   return (
                     <tr key={port}>
                       <td className="mono">{port}</td>
                       <td>{PORT_SERVICES[port] ?? '-'}</td>
                       <td>
-                        {open ? (
-                          <span className="scan-port-on">✓ {t('开放')}</span>
-                        ) : (
-                          <span className="scan-port-off">✗ {t('关闭')}</span>
-                        )}
+                        <span className="scan-port-on">✓ {t('开放')}</span>
                       </td>
                     </tr>
                   )
@@ -10976,153 +10973,292 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
   )
 }
 
-// ==================== 小工具：Ping ====================
+// ==================== 小工具：Ping（批量，对标 PingInfoView） ====================
+
+interface PingBatchRow {
+  seq: number
+  ok: boolean
+  rttMs: number
+  ttl: number
+  time: string
+}
+
+function parseHostList(raw: string): string[] {
+  const out = new Set<string>()
+  for (const part of raw.split(/[\n\r,，;；\s]+/)) {
+    const p = part.trim()
+    if (!p) continue
+    const m = p.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})-(\d{1,3})$/)
+    if (m) {
+      const a = Number(m[1])
+      const b = Number(m[2])
+      const c = Number(m[3])
+      const d1 = Number(m[4])
+      const d2 = Number(m[5])
+      if (d1 <= d2 && d2 <= 255) {
+        for (let n = d1; n <= d2; n++) out.add(`${a}.${b}.${c}.${n}`)
+      }
+    } else {
+      out.add(p)
+    }
+  }
+  return [...out]
+}
 
 function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const { t } = useAppLocale()
-  const [host, setHost] = useState('127.0.0.1')
+  const [hostsRaw, setHostsRaw] = useState('192.168.1.1\n192.168.1.2')
   const [count, setCount] = useState('10')
   const [running, setRunning] = useState(false)
-  const [rows, setRows] = useState<{ seq: number; ok: boolean; rttMs: number }[]>([])
-  const [stats, setStats] = useState<{
-    sent: number
-    received: number
-    lossPct: number
-    avgMs: number
-    minMs: number
-    maxMs: number
-  } | null>(null)
-  const [error, setError] = useState('')
+  const [summary, setSummary] = useState<
+    Record<string, { ok: number; fail: number; rtts: number[]; lastOk: boolean | null }>
+  >({})
+  const [detail, setDetail] = useState<Record<string, { hostname: string; rows: PingBatchRow[] }>>({})
+  const [selectedIp, setSelectedIp] = useState<string | null>(null)
+  const [doneCount, setDoneCount] = useState(0)
+  const [hostTotal, setHostTotal] = useState(0)
+  const [errors, setErrors] = useState<string[]>([])
+  const [finished, setFinished] = useState(false)
 
   useEffect(() => {
-    const task = listen<{ seq: number; ok: boolean; rttMs: number }>('ping-probe-result', (event) => {
-      setRows((prev) => [...prev, { seq: event.payload.seq, ok: event.payload.ok, rttMs: event.payload.rttMs }])
-    }).catch(() => () => undefined)
+    const tasks = [
+      listen<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }>('ping-batch-row', (event) => {
+        const { ip, ok, rttMs } = event.payload
+        setSummary((prev) => {
+          const cur = prev[ip] ?? { ok: 0, fail: 0, rtts: [], lastOk: null }
+          return {
+            ...prev,
+            [ip]: {
+              ok: cur.ok + (ok ? 1 : 0),
+              fail: cur.fail + (ok ? 0 : 1),
+              rtts: ok ? [...cur.rtts, rttMs] : cur.rtts,
+              lastOk: ok,
+            },
+          }
+        })
+        setDetail((prev) => {
+          const cur = prev[ip] ?? { hostname: '', rows: [] }
+          if (cur.rows.some((r) => r.seq === event.payload.seq)) return prev
+          return {
+            ...prev,
+            [ip]: { hostname: cur.hostname, rows: [...cur.rows, { seq: event.payload.seq, ok, rttMs, ttl: event.payload.ttl, time: '' }] },
+          }
+        })
+      }).catch(() => () => undefined),
+      listen<{ host: string; message: string }>('ping-batch-error', (event) => {
+        setErrors((prev) => (prev.includes(event.payload.host) ? prev : [...prev, event.payload.host]))
+      }).catch(() => () => undefined),
+      listen<{ ip: string; left: number }>('ping-batch-done', (event) => {
+        setDoneCount((prev) => {
+          const next = prev + 1
+          if (next >= hostTotal) setFinished(true)
+          return next
+        })
+        void event.payload
+      }).catch(() => () => undefined),
+    ]
     return () => {
-      void task.then((unlisten) => unlisten())
+      void Promise.all(tasks).then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()))
     }
-  }, [])
+  }, [hostTotal])
 
   async function runPing() {
     if (running) return
+    const hosts = parseHostList(hostsRaw)
+    if (hosts.length === 0) {
+      setErrors([t('主机列表为空')])
+      return
+    }
+    if (hosts.length > 128) {
+      setErrors([t('最多支持 128 个主机同时探测')])
+      return
+    }
     const n = Math.max(1, Math.min(100, Number(count) || 10))
     setRunning(true)
-    setError('')
-    setRows([])
-    setStats(null)
+    setErrors([])
+    setFinished(false)
+    setSummary({})
+    setDetail({})
+    setSelectedIp(null)
+    setDoneCount(0)
+    setHostTotal(hosts.length)
     try {
-      const result = await invoke<{
-        sent: number
-        received: number
-        lossPct: number
-        avgMs: number
-        minMs: number
-        maxMs: number
-      }>('ping_probe_tool', { host, count: n })
-      setStats(result)
+      const details = await invoke<
+        { ip: string; hostname: string; rows: PingBatchRow[] }[]
+      >('ping_batch_tool', { hosts, count: n })
+      const detailMap: Record<string, { hostname: string; rows: PingBatchRow[] }> = {}
+      const summaryMap: Record<string, { ok: number; fail: number; rtts: number[]; lastOk: boolean | null }> = {}
+      for (const d of details) {
+        detailMap[d.ip] = { hostname: d.hostname, rows: d.rows }
+        let ok = 0
+        let fail = 0
+        const rtts: number[] = []
+        for (const r of d.rows) {
+          if (r.ok) {
+            ok += 1
+            rtts.push(r.rttMs)
+          } else {
+            fail += 1
+          }
+        }
+        summaryMap[d.ip] = { ok, fail, rtts, lastOk: d.rows.length ? d.rows[d.rows.length - 1].ok : null }
+      }
+      setDetail(detailMap)
+      setSummary((prev) => ({ ...prev, ...summaryMap }))
+      if (details.length === 0) setFinished(true)
     } catch (reason) {
       const message = String(reason).replace(/^Error:\s*/i, '')
-      setError(message)
+      setErrors([message])
       onNotify(message)
     } finally {
       setRunning(false)
     }
   }
 
+  const lossPct = (row: { ok: number; fail: number }) => {
+    const total = row.ok + row.fail
+    return total > 0 ? ((row.fail / total) * 100).toFixed(1) : '0.0'
+  }
+  const avgMs = (rtts: number[]) => (rtts.length ? (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(1) : '-')
+
+  const summaryIps = Object.keys(summary)
+
   return (
     <div className="inspect-toolbox-card">
       <div className="inspect-toolbox-card-head">
         <Activity size={15} />
-        <strong>{t('Ping 工具')}</strong>
-        <span>{t('连续探测主机连通性，实时显示每次往返时间，并统计丢包率与平均/最小/最大延迟')}</span>
+        <strong>{t('批量 Ping')}</strong>
+        <span>{t('批量探测多个主机连通性，主表实时汇总；点击任意行查看该主机的逐次明细')}</span>
       </div>
-      <div className="inspect-discover-row">
-        <span className="inspect-discover-label">{t('主机')}</span>
-        <input
-          value={host}
-          onChange={(event) => setHost(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void runPing()
-          }}
-          placeholder="192.168.1.1"
-          disabled={running}
-        />
-        <span className="inspect-discover-dash">·</span>
-        <input
-          value={count}
-          onChange={(event) => setCount(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void runPing()
-          }}
-          placeholder="10"
-          disabled={running}
-          style={{ width: 64 }}
-          title={t('次数（1-100）')}
-        />
-        <button className="utility-primary-button compact" type="button" onClick={() => void runPing()} disabled={running}>
-          <RefreshCw size={13} />
-          {running ? t('探测中…') : t('开始探测')}
-        </button>
-      </div>
-      {stats && (
-        <div className="inspect-ping-stats">
-          <div>
-            <span>{t('发送')}</span>
-            <strong>{stats.sent}</strong>
-          </div>
-          <div>
-            <span>{t('接收')}</span>
-            <strong>{stats.received}</strong>
-          </div>
-          <div>
-            <span>{t('丢包率')}</span>
-            <strong className={stats.lossPct > 0 ? 'inspect-ping-warn' : ''}>{stats.lossPct.toFixed(1)}%</strong>
-          </div>
-          <div>
-            <span>{t('平均延迟')}</span>
-            <strong>{stats.avgMs.toFixed(1)}ms</strong>
-          </div>
-          <div>
-            <span>{t('最小延迟')}</span>
-            <strong>{stats.minMs}ms</strong>
-          </div>
-          <div>
-            <span>{t('最大延迟')}</span>
-            <strong>{stats.maxMs}ms</strong>
-          </div>
+      <div className="inspect-batch-inputs">
+        <div className="inspect-batch-left">
+          <span className="inspect-discover-label">{t('主机列表')}</span>
+          <textarea
+            value={hostsRaw}
+            onChange={(event) => setHostsRaw(event.target.value)}
+            placeholder={t('每行一个 IP/域名，支持范围如 192.168.1.1-10')}
+            disabled={running}
+            rows={4}
+            spellCheck={false}
+          />
         </div>
-      )}
-      {error && (
+        <div className="inspect-batch-right">
+          <div className="inspect-discover-row">
+            <span className="inspect-discover-label">{t('次数')}</span>
+            <input
+              value={count}
+              onChange={(event) => setCount(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void runPing()
+              }}
+              placeholder="10"
+              disabled={running}
+              style={{ width: 64 }}
+              title={t('次数（1-100）')}
+            />
+          </div>
+          <button className="utility-primary-button compact" type="button" onClick={() => void runPing()} disabled={running}>
+            <RefreshCw size={13} />
+            {running ? `${t('探测中')}… ${doneCount}/${hostTotal}` : t('开始探测')}
+          </button>
+        </div>
+      </div>
+      {errors.length > 0 && (
         <div className="inspect-discover-empty">
-          {t('探测失败')}：{error}
+          {errors.map((e) => (
+            <div key={e}>{t('探测失败')}：{e}</div>
+          ))}
         </div>
       )}
-      {rows.length > 0 && (
-        <div className="inspect-scan-table-wrap" style={{ maxHeight: 280, overflowY: 'auto' }}>
+      {(running || finished || summaryIps.length > 0) && (
+        <div className="inspect-scan-table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
           <table className="inspect-scan-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>{t('结果')}</th>
-                <th>{t('往返时间')}</th>
+                <th>{t('IP 地址')}</th>
+                <th>{t('主机名')}</th>
+                <th>{t('成功次数')}</th>
+                <th>{t('失败次数')}</th>
+                <th>{t('丢包率')}</th>
+                <th>{t('平均用时')}</th>
+                <th>{t('最后状态')}</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.seq}>
-                  <td className="mono">{row.seq}</td>
-                  <td>
-                    {row.ok ? (
-                      <span className="scan-port-on">✓ {t('响应')}</span>
-                    ) : (
-                      <span className="scan-port-off">✗ {t('超时')}</span>
-                    )}
+              {summaryIps.length === 0 && (
+                <tr>
+                  <td className="inspect-discover-empty" colSpan={7}>
+                    {running ? t('正在探测，结果将实时出现…') : t('输入主机列表后开始探测')}
                   </td>
-                  <td className="mono">{row.ok ? `${row.rttMs}ms` : '-'}</td>
                 </tr>
-              ))}
+              )}
+              {summaryIps.map((ip) => {
+                const row = summary[ip]
+                return (
+                  <tr
+                    key={ip}
+                    className={selectedIp === ip ? 'inspect-ping-row-selected' : ''}
+                    onClick={() => setSelectedIp(ip)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td className="mono">{ip}</td>
+                    <td>{detail[ip]?.hostname || '-'}</td>
+                    <td className="mono">{row.ok}</td>
+                    <td className="mono">{row.fail}</td>
+                    <td className="mono">{lossPct(row)}%</td>
+                    <td className="mono">{avgMs(row.rtts)}ms</td>
+                    <td>
+                      {row.lastOk === null ? (
+                        <span className="scan-port-pending">…</span>
+                      ) : row.lastOk ? (
+                        <span className="scan-port-on">✓</span>
+                      ) : (
+                        <span className="scan-port-off">✗</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+        </div>
+      )}
+      {selectedIp && detail[selectedIp] && detail[selectedIp].rows.length > 0 && (
+        <div className="inspect-ping-detail">
+          <div className="inspect-ping-detail-head">
+            <strong className="mono">{selectedIp}</strong>
+            <span>{t('逐次明细')}</span>
+          </div>
+          <div className="inspect-scan-table-wrap" style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <table className="inspect-scan-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>{t('时间')}</th>
+                  <th>{t('状态')}</th>
+                  <th>{t('往返时间')}</th>
+                  <th>TTL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail[selectedIp].rows.map((row) => (
+                  <tr key={row.seq}>
+                    <td className="mono">{row.seq}</td>
+                    <td className="mono">{row.time || '-'}</td>
+                    <td>
+                      {row.ok ? (
+                        <span className="scan-port-on">✓ {t('响应')}</span>
+                      ) : (
+                        <span className="scan-port-off">✗ {t('超时')}</span>
+                      )}
+                    </td>
+                    <td className="mono">{row.ok ? `${row.rttMs}ms` : '-'}</td>
+                    <td className="mono">{row.ok ? row.ttl : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

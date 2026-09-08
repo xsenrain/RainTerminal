@@ -1246,6 +1246,76 @@ fn ping_host(_ip: std::net::Ipv4Addr, _timeout_ms: u32) -> Option<u32> {
     None
 }
 
+/// 与 ping_host 同逻辑，额外返回 TTL（ICMP_ECHO_REPLY.Options[0] 偏移 24）。
+/// 返回 Some((rtt_ms, ttl)) 表示通。
+#[cfg(windows)]
+fn ping_host_detailed(ip: std::net::Ipv4Addr, timeout_ms: u32) -> Option<(u32, u8)> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct IcmpEchoReply {
+        address: u32,
+        status: u32,
+        rtt: u32,
+        data_size: u16,
+        reserved: u16,
+        data: *mut u8,
+        options: [u8; 20],
+    }
+
+    unsafe extern "system" {
+        fn IcmpCreateFile() -> *mut c_void;
+        fn IcmpSendEcho(
+            handle: *mut c_void,
+            dest: u32,
+            data: *const u8,
+            size: u16,
+            options: *const u8,
+            reply: *mut u8,
+            reply_size: u32,
+            timeout: u32,
+        ) -> u32;
+        fn IcmpCloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    unsafe {
+        let handle = IcmpCreateFile();
+        if handle.is_null() {
+            return None;
+        }
+        let ip_net = u32::from_le_bytes(ip.octets());
+        let data: [u8; 16] = *b"RainTerminalPing";
+        let reply_size = std::mem::size_of::<IcmpEchoReply>() + data.len() + 8;
+        let mut reply: Vec<u8> = vec![0u8; reply_size];
+        let sent = IcmpSendEcho(
+            handle,
+            ip_net,
+            data.as_ptr(),
+            data.len() as u16,
+            std::ptr::null(),
+            reply.as_mut_ptr(),
+            reply_size as u32,
+            timeout_ms,
+        );
+        IcmpCloseHandle(handle);
+        if sent == 0 {
+            return None;
+        }
+        let status = u32::from_le_bytes([reply[4], reply[5], reply[6], reply[7]]);
+        if status != 0 {
+            return None;
+        }
+        let rtt = u32::from_le_bytes([reply[8], reply[9], reply[10], reply[11]]);
+        let ttl = reply[24];
+        Some((rtt, ttl))
+    }
+}
+
+#[cfg(not(windows))]
+fn ping_host_detailed(_ip: std::net::Ipv4Addr, _timeout_ms: u32) -> Option<(u32, u8)> {
+    None
+}
+
 /// 反向域名解析，带 600ms 超时兜底（DNS 慢时不阻塞扫描）。
 fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
     let (tx, rx) = std::sync::mpsc::channel::<std::io::Result<String>>();
@@ -1549,4 +1619,128 @@ pub async fn ping_probe_tool(
     spawned
         .await
         .map_err(|e| format!("ping 线程异常: {e}"))?
+}
+
+// ==================== 小工具：批量 Ping（对标 PingInfoView：多主机并行，主表汇总 + 选中明细） ====================
+
+#[derive(serde::Serialize, Clone)]
+pub struct PingBatchRow {
+    pub seq: u32,
+    pub ok: bool,
+    pub rtt_ms: u32,
+    pub ttl: u8,
+    pub time: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct PingHostDetail {
+    pub ip: String,
+    pub hostname: String,
+    pub rows: Vec<PingBatchRow>,
+}
+
+/// 批量 ping：hosts 为 IP/域名列表，每个主机独立线程并行探测 count 次（1-100，间隔 300ms）。
+/// 每次结果推送 ping-batch-row（ip/seq/ok/rttMs/ttl），全部结束后返回每个主机的完整明细。
+#[tauri::command]
+pub async fn ping_batch_tool(
+    app: tauri::AppHandle,
+    hosts: Vec<String>,
+    count: u32,
+) -> Result<Vec<PingHostDetail>, String> {
+    let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<PingHostDetail>, String> {
+        let mut hosts: Vec<String> = hosts
+            .into_iter()
+            .map(|h| h.trim().to_string())
+            .filter(|h| !h.is_empty())
+            .collect();
+        hosts.sort();
+        hosts.dedup();
+        if hosts.is_empty() {
+            return Err("主机列表为空".to_string());
+        }
+        if hosts.len() > 128 {
+            return Err("最多支持 128 个主机同时探测".to_string());
+        }
+        let count = count.clamp(1, 100);
+        let results: Arc<std::sync::Mutex<Vec<PingHostDetail>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let remaining = Arc::new(AtomicUsize::new(hosts.len()));
+        let mut handles = Vec::with_capacity(hosts.len());
+        for host in hosts {
+            let app = app.clone();
+            let results = Arc::clone(&results);
+            let remaining = Arc::clone(&remaining);
+            handles.push(std::thread::spawn(move || {
+                let ips = match dns_lookup::lookup_host(&host) {
+                    Ok(ips) => ips,
+                    Err(_) => {
+                        let _ = app.emit(
+                            "ping-batch-error",
+                            serde_json::json!({ "host": host, "message": "主机解析失败" }),
+                        );
+                        return;
+                    }
+                };
+                let Some(ip) = ips.into_iter().find(|ip| ip.is_ipv4()) else {
+                    let _ = app.emit(
+                        "ping-batch-error",
+                        serde_json::json!({ "host": host, "message": "未找到 IPv4 地址" }),
+                    );
+                    return;
+                };
+                let ip = match ip {
+                    std::net::IpAddr::V4(v4) => v4,
+                    _ => unreachable!(),
+                };
+                let hostname = reverse_hostname(ip);
+                let mut rows = Vec::with_capacity(count as usize);
+                for seq in 1..=count {
+                    let started = std::time::Instant::now();
+                    let detail = ping_host_detailed(ip, 1000);
+                    let elapsed_ms = started.elapsed().as_millis() as u32;
+                    let (ok, rtt_ms, ttl) = match detail {
+                        Some((r, tt)) => (true, r, tt),
+                        None => (false, elapsed_ms, 0u8),
+                    };
+                    let time = chrono::Local::now().format("%H:%M:%S").to_string();
+                    rows.push(PingBatchRow {
+                        seq,
+                        ok,
+                        rtt_ms,
+                        ttl,
+                        time: time.clone(),
+                    });
+                    let _ = app.emit(
+                        "ping-batch-row",
+                        serde_json::json!({ "ip": ip.to_string(), "seq": seq, "ok": ok, "rtt_ms": rtt_ms, "ttl": ttl }),
+                    );
+                    if seq < count {
+                        std::thread::sleep(Duration::from_millis(300));
+                    }
+                }
+                results.lock().unwrap().push(PingHostDetail {
+                    ip: ip.to_string(),
+                    hostname,
+                    rows,
+                });
+                let left = remaining.fetch_sub(1, Ordering::SeqCst) - 1;
+                let _ = app.emit(
+                    "ping-batch-done",
+                    serde_json::json!({ "ip": ip.to_string(), "left": left }),
+                );
+            }));
+        }
+        for handle in handles {
+            let _ = handle.join();
+        }
+        let mut result = results.lock().unwrap().clone();
+        result.sort_by_key(|d| {
+            d.ip
+                .parse::<std::net::Ipv4Addr>()
+                .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED)
+        });
+        Ok(result)
+    });
+    spawned
+        .await
+        .map_err(|e| format!("批量 ping 线程异常: {e}"))?
 }
