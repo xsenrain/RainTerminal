@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Fragment, memo, Profiler, startTransition, useSyncExternalStore } from 'react'
 import { useDeferredValue } from 'react'
 import { createContext, useContext } from 'react'
@@ -14,6 +14,7 @@ import {
 } from './credentialVault'
 import { createMessageChannel, type RemoteDesktopConnection } from './ironRdpBridge'
 import RemoteDesktopWidget from './RemoteDesktopWidget'
+import MonitorUplot from './MonitorUplot'
 import {
   cancelTransfer,
   canCancelTransfer,
@@ -9201,7 +9202,7 @@ function MachineMonitorWidget({
         <span className="mch-range">{t('近')} {Math.round(((history[metric].length - 1) * 2) / 60 * 10) / 10} {t('分钟')}</span>
       </div>
       <div className="monitor-chart">
-        <MonitorSparkline values={history[metric]} />
+        <MonitorUplot values={history[metric]} label={activeCard.label} />
       </div>
       {stats && (
         <div className="monitor-overview">
@@ -16268,114 +16269,6 @@ function smoothPath(pts: { x: number; y: number }[]) {
     d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
   }
   return d
-}
-
-function MonitorSparkline({ values }: { values: number[] }) {
-  const { t } = useAppLocale()
-  const gradientId = useId().replace(/:/g, '')
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  const safeValues = values.length > 1 ? values : [0, values[0] ?? 0]
-  const width = 260
-  const height = 120
-  const padL = 30
-  const padR = 12
-  const padT = 12
-  const padB = 20
-  const innerW = width - padL - padR
-  const innerH = height - padT - padB
-  const pts = safeValues.map((value, index) => {
-    const x = padL + (index / Math.max(1, safeValues.length - 1)) * innerW
-    const y = padT + innerH - (Math.max(0, Math.min(100, value)) / 100) * innerH
-    return { x, y, v: value }
-  })
-  const linePath = smoothPath(pts)
-  const areaPath = pts.length > 1
-    ? `${linePath} L ${pts[pts.length - 1].x.toFixed(1)},${padT + innerH} L ${pts[0].x.toFixed(1)},${padT + innerH} Z`
-    : ''
-  const last = pts[pts.length - 1]
-  let maxP = pts[0]
-  let minP = pts[0]
-  for (const p of pts) {
-    if (p.v > maxP.v) maxP = p
-    if (p.v < minP.v) minP = p
-  }
-  const isExtreme = (p: { x: number; y: number; v: number }) => p === maxP || p === minP
-  const gridValues = [0, 25, 50, 75, 100]
-  const hoverPt = hoverIndex != null ? pts[Math.max(0, Math.min(pts.length - 1, hoverIndex))] : null
-  const hoverTime = hoverIndex != null
-    ? new Date(Date.now() - (safeValues.length - 1 - hoverIndex) * 2000)
-    : null
-  const fmtClock = (d: Date | null) => (
-    d
-      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-      : ''
-  )
-  const tipX = hoverPt ? (hoverPt.x > width - 74 ? hoverPt.x - 72 : hoverPt.x + 8) : 0
-  const tipY = hoverPt ? Math.max(6, hoverPt.y - 26) : 0
-  const totalSec = (safeValues.length - 1) * 2
-  const rangeLabel = totalSec >= 60
-    ? `-${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`
-    : `-0:${String(totalSec).padStart(2, '0')}`
-  const onMove = (event: React.MouseEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    if (rect.width <= 0) return
-    const ratio = (event.clientX - rect.left) / rect.width
-    const idx = Math.round(ratio * (safeValues.length - 1))
-    setHoverIndex(Math.max(0, Math.min(safeValues.length - 1, idx)))
-  }
-
-  return (
-    <svg
-      className="monitor-sparkline"
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={t('监控图表')}
-      onMouseMove={onMove}
-      onMouseLeave={() => setHoverIndex(null)}
-    >
-      <defs>
-        <linearGradient id={`spark-area-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--accent, #8ecbff)" stopOpacity="0.30" />
-          <stop offset="100%" stopColor="var(--accent, #8ecbff)" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      {gridValues.map((g) => {
-        const gy = padT + innerH - (g / 100) * innerH
-        return (
-          <g key={g}>
-            <polyline points={`${padL},${gy.toFixed(1)} ${width - padR},${gy.toFixed(1)}`} className="grid-line" />
-            <text x={4} y={(gy + 3).toFixed(1)} className="axis-label">{g}%</text>
-          </g>
-        )
-      })}
-      {pts.length > 1 && <polygon points={areaPath} fill={`url(#spark-area-${gradientId})`} />}
-      <path className="line" d={linePath} fill="none" />
-      {!isExtreme(maxP) && <circle cx={maxP.x} cy={maxP.y} r={2.8} className="extreme-dot max" />}
-      {!isExtreme(minP) && <circle cx={minP.x} cy={minP.y} r={2.8} className="extreme-dot min" />}
-      {!isExtreme(maxP) && (
-        <text x={(maxP.x + 5).toFixed(1)} y={(maxP.y - 3).toFixed(1)} className="extreme-label">
-          {maxP.v.toFixed(1)}
-        </text>
-      )}
-      {!isExtreme(minP) && (
-        <text x={(minP.x + 5).toFixed(1)} y={(minP.y + 8).toFixed(1)} className="extreme-label">
-          {minP.v.toFixed(1)}
-        </text>
-      )}
-      <circle cx={last.x} cy={last.y} r={3.2} className="current-dot" />
-      {hoverPt && (
-        <g>
-          <line x1={hoverPt.x} y1={padT} x2={hoverPt.x} y2={padT + innerH} className="hover-line" />
-          <circle cx={hoverPt.x} cy={hoverPt.y} r={3.6} className="hover-dot" />
-          <rect x={tipX} y={tipY} width={68} height={22} rx={4} className="hover-tip-bg" />
-          <text x={tipX + 5} y={tipY + 9} className="hover-tip-val">{hoverPt.v.toFixed(1)}%</text>
-          <text x={tipX + 5} y={tipY + 18} className="hover-tip-time">{fmtClock(hoverTime)}</text>
-        </g>
-      )}
-      <text x={padL} y={height - 4} className="axis-time">{rangeLabel}</text>
-      <text x={width - padR} y={height - 4} textAnchor="end" className="axis-time">{t('现在')}</text>
-    </svg>
-  )
 }
 
 function avgOf(arr: number[]) {

@@ -777,3 +777,17 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 历史采样点 60 → 750（2 秒/点 × 25 分钟，用户要求）
 - 大图尺寸封顶：svg 宽度 min(100%, 560px) 居中，宽屏下不再等比放大到 400px 高
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 监控大图换 uPlot（对标 3x-ui）
+
+- 用户参考 MHSanaei/3x-ui（其新版图表用 uPlot），弃用手写 SVG 折线图
+- 新增 src/MonitorUplot.tsx（uPlot 1.6.32）：
+  - 时间序列 x 轴（HH:MM 刻度，跟随 25 分钟窗口）、y 轴 0-100%
+  - 平滑曲线 + canvas 线性渐变面积（主题 accent 色）
+  - 十字光标 + 圆点 + 跟随 tooltip（时间 HH:MM:SS + 数值）
+  - 深浅主题/皮肤切换自动重建（MutationObserver）
+  - ResizeObserver 自适应宽度，高度 216px 固定
+- 删除 MonitorSparkline 大图 SVG（MiniSpark 卡片小图保留）
+- 验证：npm build 通过（uplot 新增依赖 ~40KB）

@@ -3654,12 +3654,48 @@ body:has(.app-toast) .file-download-progress {
 
 .monitor-chart {
   position: relative;
-  display: grid;
-  min-height: 150px;
+  min-height: 216px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-1, #0c0d11);
+}
+.monitor-uplot {
+  position: relative;
+  width: 100%;
+}
+.monitor-uplot .u-wrap {
+  position: relative;
+  box-sizing: content-box;
+}
+.monitor-uplot canvas {
+  display: block;
+}
+.uplot-tip {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--surface-3, #1d222c);
+  border: 1px solid var(--border-medium, rgba(226, 238, 255, 0.12));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 0.08s;
+}
+.uplot-tip-time {
+  font-size: 10px;
+  color: var(--text-tertiary, #737d90);
+  font-variant-numeric: tabular-nums;
+}
+.uplot-tip-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent, #8ecbff);
+  font-variant-numeric: tabular-nums;
 }
 .monitor-chart-head {
   display: flex;
@@ -3693,87 +3729,7 @@ body:has(.app-toast) .file-download-progress {
   color: var(--text-disabled, #444c5c);
 }
 
-.monitor-sparkline {
-  width: min(100%, 560px);
-  aspect-ratio: 260 / 120;
-  min-height: 120px;
-  margin: 0 auto;
-  display: block;
-  touch-action: none;
-}
 
-.monitor-sparkline polygon {
-  fill: rgba(142,203,255,0.18);
-}
-
-.monitor-sparkline polyline {
-  fill: none;
-  stroke: var(--border-soft, rgba(226,238,255,0.045));
-  stroke-width: 1;
-}
-
-.monitor-sparkline .line {
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-.monitor-sparkline path.line {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-.monitor-sparkline .grid-line {
-  stroke: var(--border-medium, rgba(226, 238, 255, 0.12));
-  stroke-width: 1;
-  fill: none;
-}
-.monitor-sparkline .axis-label {
-  font-size: 8px;
-  fill: var(--text-secondary, #aeb8c8);
-}
-.monitor-sparkline .extreme-label {
-  font-size: 8px;
-  fill: var(--text-tertiary, #737d90);
-}
-.monitor-sparkline .axis-time {
-  font-size: 8px;
-  fill: var(--text-disabled, #444c5c);
-}
-.monitor-sparkline .current-dot {
-  fill: var(--accent, #8ecbff);
-  stroke: var(--surface-1, #0c0d11);
-  stroke-width: 1.2;
-}
-.monitor-sparkline .extreme-dot.max {
-  fill: #ffb74d;
-}
-.monitor-sparkline .extreme-dot.min {
-  fill: #4fc3f7;
-}
-.monitor-sparkline .hover-line {
-  stroke: var(--text-tertiary, #737d90);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-}
-.monitor-sparkline .hover-dot {
-  fill: var(--accent, #8ecbff);
-  stroke: var(--surface-1, #0c0d11);
-  stroke-width: 1.5;
-}
-.monitor-sparkline .hover-tip-bg {
-  fill: var(--surface-3, #1d222c);
-  stroke: var(--border-medium, rgba(226, 238, 255, 0.12));
-}
-.monitor-sparkline .hover-tip-val {
-  font-size: 9px;
-  font-weight: 600;
-  fill: var(--text-primary, #f5f7fb);
-}
-.monitor-sparkline .hover-tip-time {
-  font-size: 8px;
-  fill: var(--text-tertiary, #737d90);
-}
 
 .monitor-readout {
   position: absolute;
