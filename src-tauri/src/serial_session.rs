@@ -54,28 +54,24 @@ pub struct SerialConnectRequest {
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SerialPayload {
     session_id: String,
     data: String,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SerialStatusPayload {
     session_id: String,
     message: String,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SerialPortInfo {
     name: String,
     port_type: String,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct SerialHealthPayload {
     session_id: String,
     connected: bool,

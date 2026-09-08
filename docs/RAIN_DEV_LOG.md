@@ -1026,3 +1026,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - error 事件 fallback 文案去 SSH 字样
 - 后端 telnet 连接/事件输出诊断（dev 控制台可见 [telnet] 日志，用于定位连接链路）
 - 验证：npm build + cargo check 通过
+
+---
+
+## 2026-09-08 · 修复：Telnet/Serial 事件字段 camelCase 导致连接状态不更新（核心 BUG）
+
+- 后端 telnet/serial 的事件/健康 payload 结构体去掉 #[serde(rename_all = "camelCase")]
+  - 之前事件字段序列化为 sessionId，前端监听器用 event.payload.session_id（snake_case）永远不匹配
+  - 后果：connected/data/error/closed 四个事件全部被前端忽略，界面永远"正在连接"
+  - 修后事件字段为 session_id，与 SSH 事件一致，与前端类型完全匹配
+- request 结构体保留 camelCase（前端 invoke 传 sessionId 等不变）
+- 侧栏新建 Telnet 设备默认端口 23（SSH 仍 22；弹窗内切换协议已是 23）
+- Serial 同因同修（枚举串口返回值 SerialPortInfo 同步 snake_case，前端本就使用 port_type）
+- 验证：npm build + cargo check 通过

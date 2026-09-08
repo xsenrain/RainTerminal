@@ -67,21 +67,18 @@ pub struct TelnetConnectRequest {
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct TelnetPayload {
     session_id: String,
     data: String,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct TelnetStatusPayload {
     session_id: String,
     message: String,
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct TelnetHealthPayload {
     session_id: String,
     connected: bool,

@@ -2867,7 +2867,7 @@ function App() {
                       onSelect={selectServer}
                       onOpenServer={openServerRunPanel}
                       onServerContextMenu={openServerContextMenu}
-                      onAdd={(protocol) => setServerModal({ ...blankDraft, protocol })}
+                      onAdd={(protocol) => setServerModal({ ...blankDraft, protocol, port: protocol === 'telnet' ? 23 : protocol === 'serial' ? 22 : 22, user: protocol === 'serial' ? '' : 'root' })}
                       onAddRemoteDesktop={() => setRemoteDesktopModal(blankRemoteDesktopDraft)}
                       onOpenRemoteDesktop={openRemoteDesktopProfile}
                       onRemoteDesktopContextMenu={openRemoteDesktopProfileContextMenu}
