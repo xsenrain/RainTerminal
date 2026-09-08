@@ -1039,3 +1039,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 侧栏新建 Telnet 设备默认端口 23（SSH 仍 22；弹窗内切换协议已是 23）
 - Serial 同因同修（枚举串口返回值 SerialPortInfo 同步 snake_case，前端本就使用 port_type）
 - 验证：npm build + cargo check 通过
+
+---
+
+## 2026-09-08 · 修复：Telnet ECHO 协商（登录后 shell 输入不可见的隐患）
+
+- 服务器发 WILL ECHO（要恢复回显）时此前应答 DONT ECHO 拒绝 → 登录成功后 shell 输入会一直不可见
+- 现改为接受：WILL ECHO → DO ECHO（服务器回显）；WILL SGA → DO SGA；其余 WILL 仍拒绝
+- 补全 WONT/DONT 应答：WONT X → DONT X、DONT X → WONT X（RFC 854 规范，登录阶段 ECHO 关闭确认）
+- 说明：CentOS telnet-server 登录阶段（用户名+密码）默认不回显是安全机制，mobaxterm 同样如此，非程序缺陷；登录成功后服务器恢复回显，修复后输入正常可见
+- 验证：cargo check 通过

@@ -185,14 +185,19 @@ fn handle_telnet_bytes(
                         }
                     }
                 } else if cmd == WILL {
-                    // 服务器要开启选项：SGA 接受，其余一律禁止
-                    if opt == SGA {
-                        response.extend_from_slice(&[IAC, DO, SGA]);
-                    } else {
-                        response.extend_from_slice(&[IAC, DONT, opt]);
+                    // 服务器要开启选项：接受 ECHO（服务器回显，登录后 shell 必需）与 SGA，其余拒绝
+                    match opt {
+                        ECHO => response.extend_from_slice(&[IAC, DO, ECHO]),
+                        SGA => response.extend_from_slice(&[IAC, DO, SGA]),
+                        _ => response.extend_from_slice(&[IAC, DONT, opt]),
                     }
+                } else if cmd == WONT {
+                    // 服务器要关闭选项：确认（登录阶段 ECHO 关闭，用户名/密码不回显）
+                    response.extend_from_slice(&[IAC, DONT, opt]);
+                } else if cmd == DONT {
+                    // 服务器禁止客户端开启选项：确认
+                    response.extend_from_slice(&[IAC, WONT, opt]);
                 }
-                // DONT / WONT：无响应
                 i += 3;
             }
             SB => {
