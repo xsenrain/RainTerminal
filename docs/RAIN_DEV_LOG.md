@@ -925,3 +925,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 网络页 Y 轴刻度文字取消(用户要求)，size 6 保留 grid 网格线；
   其他指标页保持百分比刻度
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · tooltip改原生mousemove驱动（不依赖uPlot cursor）
+
+- 前两轮 hooks.setCursor 方案用户实测仍不显示
+- 改：wrap 容器原生 mousemove 事件 + uPlot.posToIdx() 计算最近点，
+  直接驱动 tooltip，不依赖 uPlot 内部 cursor 状态
+- 十字线仍由 uPlot cursor.x/y 原生绘制
+- 验证：npm build 通过

@@ -155,39 +155,6 @@ function MonitorUplot({
       },
       legend: { show: false },
       hooks: {
-        setCursor: [
-          (self: uPlot) => {
-            const idx = self.cursor.idx ?? -1
-            if (idx < 0 || !tip || !tipTime || !tipVal) {
-              if (tip) tip.style.opacity = '0'
-              return
-            }
-            const ts = self.data[0]?.[idx] as number | undefined
-            const v1 = self.data[1]?.[idx] as number | undefined
-            if (ts == null) {
-              if (tip) tip.style.opacity = '0'
-              return
-            }
-            const x = self.valToPos(ts, 'x', true)
-            const y = self.valToPos(v1 ?? 0, 'y', true)
-            tipTime.textContent = formatClock(ts)
-            if (isRate) {
-              const v2 = self.data[2]?.[idx] as number | undefined
-              tipVal.innerHTML =
-                `<span class="uplot-tip-row"><i style="background:${UP_COLOR}"></i>${label ?? '上传'} ${fmtRate(v1 ?? 0)}</span>` +
-                `<span class="uplot-tip-row"><i style="background:${DOWN_COLOR}"></i>${label2 ?? '下载'} ${fmtRate(v2 ?? 0)}</span>`
-            } else {
-              tipVal.innerHTML = `<span class="uplot-tip-row"><i style="background:${accent}"></i>${label ?? ''} ${(v1 ?? 0).toFixed(1)}%</span>`
-            }
-            tip.style.opacity = '1'
-            const tipW = tip.offsetWidth
-            const tipH = tip.offsetHeight
-            const left = x + 12 + tipW > self.width ? x - tipW - 12 : x + 12
-            const top = y - tipH / 2 < 0 ? 4 : y - tipH / 2
-            tip.style.left = `${Math.max(0, left)}px`
-            tip.style.top = `${top}px`
-          },
-        ],
         setScale: [
           (self: uPlot) => {
             void self
@@ -202,6 +169,49 @@ function MonitorUplot({
     const plot = new uPlot(opts, initialData, wrap)
     plotRef.current = plot
 
+    const showTip = (idx: number) => {
+      const self = plot
+      if (idx < 0 || !tip || !tipTime || !tipVal) {
+        if (tip) tip.style.opacity = '0'
+        return
+      }
+      const ts = self.data[0]?.[idx] as number | undefined
+      if (ts == null) {
+        if (tip) tip.style.opacity = '0'
+        return
+      }
+      const v1 = self.data[1]?.[idx] as number | undefined
+      const x = self.valToPos(ts, 'x', true)
+      const y = self.valToPos(v1 ?? 0, 'y', true)
+      tipTime.textContent = formatClock(ts)
+      if (isRate) {
+        const v2 = self.data[2]?.[idx] as number | undefined
+        tipVal.innerHTML =
+          `<span class="uplot-tip-row"><i style="background:${UP_COLOR}"></i>${label ?? '上传'} ${fmtRate(v1 ?? 0)}</span>` +
+          `<span class="uplot-tip-row"><i style="background:${DOWN_COLOR}"></i>${label2 ?? '下载'} ${fmtRate(v2 ?? 0)}</span>`
+      } else {
+        tipVal.innerHTML = `<span class="uplot-tip-row"><i style="background:${accent}"></i>${label ?? ''} ${(v1 ?? 0).toFixed(1)}%</span>`
+      }
+      tip.style.opacity = '1'
+      const tipW = tip.offsetWidth
+      const tipH = tip.offsetHeight
+      const left = x + 12 + tipW > self.width ? x - tipW - 12 : x + 12
+      const top = y - tipH / 2 < 0 ? 4 : y - tipH / 2
+      tip.style.left = `${Math.max(0, left)}px`
+      tip.style.top = `${top}px`
+    }
+
+    const onMove = (e: MouseEvent) => {
+      const rect = wrap.getBoundingClientRect()
+      const idx = plot.posToIdx(e.clientX - rect.left)
+      showTip(idx)
+    }
+    const onLeave = () => {
+      if (tip) tip.style.opacity = '0'
+    }
+    wrap.addEventListener('mousemove', onMove)
+    wrap.addEventListener('mouseleave', onLeave)
+
     const ro = new ResizeObserver(() => {
       const width = wrap.clientWidth
       if (width > 0) plot.setSize({ width, height: 260 })
@@ -210,6 +220,8 @@ function MonitorUplot({
 
     return () => {
       ro.disconnect()
+      wrap.removeEventListener('mousemove', onMove)
+      wrap.removeEventListener('mouseleave', onLeave)
       plot.destroy()
       plotRef.current = null
       wrap.replaceChildren()
