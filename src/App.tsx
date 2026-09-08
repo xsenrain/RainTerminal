@@ -2871,7 +2871,6 @@ function App() {
           />
         ) : mainView === 'tools' ? (
           <InspectToolbox
-            onAddInspectDevice={addInspectDevice}
             onNotify={(message) => setToast(message)}
           />
         ) : (
@@ -10532,15 +10531,8 @@ function Inspector({
   )
 }
 
-function InspectToolbox({
-  onAddInspectDevice,
-  onNotify,
-}: {
-  onAddInspectDevice: (device: Omit<InspectDevice, 'id'>) => void
-  onNotify: (message: string) => void
-}) {
+function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const { t } = useAppLocale()
-  const [vendors] = useState<string[]>(() => readInspectVendors())
   const [discoverStart, setDiscoverStart] = useState('192.168.1.1')
   const [discoverEnd, setDiscoverEnd] = useState('192.168.1.254')
   const [discoverScanning, setDiscoverScanning] = useState(false)
@@ -10549,8 +10541,6 @@ function InspectToolbox({
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
-  const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(new Set())
-  const [discoverVendor, setDiscoverVendor] = useState<Record<string, string>>({})
 
   function ipCmp(a: string, b: string): number {
     const pa = a.split('.').map(Number)
@@ -10560,11 +10550,6 @@ function InspectToolbox({
       if (diff !== 0) return diff
     }
     return 0
-  }
-
-  function guessVendor(ports: number[]): string {
-    if (ports.includes(23) && !ports.includes(22)) return 'other'
-    return 'linux'
   }
 
   useEffect(() => {
@@ -10596,8 +10581,6 @@ function InspectToolbox({
     setDiscoverProgress(null)
     setDiscoverPhase(null)
     setDiscoverRows({})
-    setDiscoverSelected(new Set())
-    setDiscoverVendor({})
     try {
       const hits = await invoke<{ ip: string; name: string; open_ports: number[] }[]>('scan_inspect_network', {
         startIp: discoverStart,
@@ -10607,12 +10590,6 @@ function InspectToolbox({
       setDiscoverRows((prev) => {
         const next = { ...prev }
         for (const hit of hits) next[hit.ip] = { name: hit.name, open_ports: hit.open_ports }
-        return next
-      })
-      setDiscoverSelected(new Set(hits.map((h) => h.ip)))
-      setDiscoverVendor((prev) => {
-        const next = { ...prev }
-        for (const hit of hits) next[hit.ip] = next[hit.ip] ?? guessVendor(hit.open_ports)
         return next
       })
       if (hits.length === 0) onNotify(t('范围内未发现在线设备'))
@@ -10628,66 +10605,18 @@ function InspectToolbox({
     }
   }
 
-  function toggleHit(ip: string) {
-    setDiscoverSelected((current) => {
-      const next = new Set(current)
-      if (next.has(ip)) {
-        next.delete(ip)
-      } else {
-        next.add(ip)
-      }
-      return next
-    })
-  }
-
-  async function addOneDevice(ip: string, row: { name: string; open_ports: number[] | null }) {
-    const ports = row.open_ports ?? []
-    onAddInspectDevice({
-      name: row.name || ip,
-      host: ip,
-      port: ports.includes(22) ? 22 : 23,
-      username: '',
-      password: '',
-      vendor: discoverVendor[ip] ?? guessVendor(ports),
-      remark: t('网段发现'),
-    })
-    onNotify(`${t('已添加')} ${ip}`)
-  }
-
-  async function addDevices() {
-    const picked = Object.entries(discoverRows).filter(([ip]) => discoverSelected.has(ip))
-    if (picked.length === 0) {
-      onNotify(t('请先勾选要添加的设备'))
-      return
-    }
-    for (const [ip, row] of picked) {
-      const ports = row.open_ports ?? []
-      onAddInspectDevice({
-        name: row.name || ip,
-        host: ip,
-        port: ports.includes(22) ? 22 : 23,
-        username: '',
-        password: '',
-        vendor: discoverVendor[ip] ?? guessVendor(ports),
-        remark: t('网段发现'),
-      })
-    }
-    onNotify(`${t('已添加')} ${picked.length} ${t('台设备到巡检设备列表，请编辑补全账号密码')}`)
-    setDiscoverRows({})
-  }
-
   return (
     <div className="inspect-toolbox">
       <div className="inspect-toolbox-header">
         <strong>{t('小工具')}</strong>
-        <span>{t('常用网络与运维小工具集合，结果可直接汇入巡检设备清单')}</span>
+        <span>{t('常用网络与运维小工具集合')}</span>
       </div>
       <div className="inspect-toolbox-grid">
         <div className="inspect-toolbox-card">
           <div className="inspect-toolbox-card-head">
             <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
-            <span>{t('探测 IP 范围内开放的常用服务端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS），识别在线设备并批量生成巡检设备清单，最多 8192 个 IP')}</span>
+            <span>{t('探测 IP 范围内开放的常用服务端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS），快速识别在线设备及其开放端口，最多 8192 个 IP')}</span>
           </div>
           <div className="inspect-discover-row">
             <span className="inspect-discover-label">{t('IP 范围')}</span>
@@ -10728,7 +10657,6 @@ function InspectToolbox({
               <table className="inspect-scan-table">
                 <thead>
                   <tr>
-                    <th className="inspect-scan-col-check" />
                     <th>{t('IP 地址')}</th>
                     <th>{t('名称')}</th>
                     <th title="22">SSH</th>
@@ -10738,14 +10666,12 @@ function InspectToolbox({
                     <th title="23">Telnet</th>
                     <th title="80">HTTP</th>
                     <th title="443">HTTPS</th>
-                    <th>{t('厂商')}</th>
-                    <th>{t('操作')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.keys(discoverRows).length === 0 && (
                     <tr>
-                      <td className="inspect-discover-empty" colSpan={12}>
+                      <td className="inspect-discover-empty" colSpan={9}>
                         {discoverError
                           ? `${t('扫描失败')}：${discoverError}`
                           : discoverFinished
@@ -10768,9 +10694,6 @@ function InspectToolbox({
                         )
                       return (
                         <tr key={ip}>
-                          <td className="inspect-scan-col-check">
-                            <input type="checkbox" checked={discoverSelected.has(ip)} onChange={() => toggleHit(ip)} />
-                          </td>
                           <td className="mono">{ip}</td>
                           <td>{row.name || '-'}</td>
                           <td>{mark(22)}</td>
@@ -10780,30 +10703,11 @@ function InspectToolbox({
                           <td>{mark(23)}</td>
                           <td>{mark(80)}</td>
                           <td>{mark(443)}</td>
-                          <td>
-                            <select className="inspect-scan-vendor" value={discoverVendor[ip] ?? guessVendor(ports ?? [])} onChange={(event) => setDiscoverVendor((prev) => ({ ...prev, [ip]: event.target.value }))}>
-                              {vendors.map((vendor) => (
-                                <option key={vendor} value={vendor}>{vendor}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            <button className="utility-text-button compact" type="button" onClick={() => void addOneDevice(ip, row)}>
-                              <Plus size={12} />
-                              {t('添加')}
-                            </button>
-                          </td>
                         </tr>
                       )
                     })}
                 </tbody>
               </table>
-              <div className="inspect-discover-actions">
-                <button className="utility-primary-button compact" type="button" onClick={() => void addDevices()} disabled={discoverSelected.size === 0}>
-                  <Plus size={13} />
-                  {t('添加勾选设备')} ({discoverSelected.size})
-                </button>
-              </div>
             </div>
           )}
         </div>

@@ -1138,7 +1138,7 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（两阶段流式：先存活 → 再端口） ====================
+// ==================== 网段发现（两阶段流式：先存活 → 再端口，全并行 + 短超时） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
@@ -1150,6 +1150,29 @@ pub struct InspectScanHit {
 fn tcp_probe(ip: std::net::Ipv4Addr, port: u16, timeout: Duration) -> bool {
     let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(ip), port);
     std::net::TcpStream::connect_timeout(&addr, timeout).is_ok()
+}
+
+/// 对同一 IP 的多个端口并行探测（每端口一个短线程），返回开放的端口。
+/// 单 IP 耗时 ≈ 一个超时周期（而非 端口数 × 超时）。
+fn probe_ports_parallel(ip: std::net::Ipv4Addr, ports: &[u16], timeout: Duration) -> Vec<u16> {
+    let handles: Vec<_> = ports
+        .iter()
+        .map(|&port| {
+            let ip = ip;
+            std::thread::spawn(move || tcp_probe(ip, port, timeout))
+        })
+        .collect();
+    ports
+        .iter()
+        .zip(handles)
+        .filter_map(|(&port, handle)| {
+            if handle.join().unwrap_or(false) {
+                Some(port)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// 反向域名解析，带 600ms 超时兜底（DNS 慢时不阻塞扫描）。
@@ -1173,8 +1196,8 @@ fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
 }
 
 /// 扫描 [start_ip, end_ip] 范围内设备，两阶段流式（async + spawn_blocking，不阻塞主线程）：
-/// 1. 存活检测：快速探测 22/23/445/80/443（200ms 超时，128 IP/批并发），命中立即推送 inspect-scan-alive
-/// 2. 端口探测：对存活 IP 探测 22/23/3389/5900/21/80/443（500ms 超时，64 IP/批并发），逐台推送 inspect-scan-port
+/// 1. 存活检测：每 IP 并行探测 22/23/445/80/443（200ms 超时，128 IP/批），命中立即推送 inspect-scan-alive
+/// 2. 端口探测：对存活 IP 并行探测 22/23/3389/5900/21/80/443（300ms 超时，64 IP/批），逐台推送 inspect-scan-port
 /// 进度：每批推送 inspect-scan-progress（phase: alive|ports）
 #[tauri::command]
 pub async fn scan_inspect_network(
@@ -1213,14 +1236,9 @@ pub async fn scan_inspect_network(
             handles.push(std::thread::spawn(move || {
                 for j in 0..batch_len {
                     let ip = std::net::Ipv4Addr::from(batch_start + j as u32);
-                    let mut up = false;
-                    for port in alive_ports {
-                        if tcp_probe(ip, port, Duration::from_millis(200)) {
-                            up = true;
-                            break;
-                        }
-                    }
-                    if up {
+                    // 5 端口并行探测，最坏 200ms 判存活
+                    let open = probe_ports_parallel(ip, &alive_ports, Duration::from_millis(200));
+                    if !open.is_empty() {
                         let name = reverse_hostname(ip);
                         alive.lock().unwrap().push((ip, name.clone()));
                         let _ = app.emit(
@@ -1241,7 +1259,7 @@ pub async fn scan_inspect_network(
             let _ = handle.join();
         }
 
-        // ---------- 阶段 2：端口探测（64 IP/批），逐台推送 ----------
+        // ---------- 阶段 2：端口探测（64 IP/批，每台 7 端口并行），逐台推送 ----------
         let alive_list = alive.lock().unwrap().clone();
         let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let processed2 = Arc::new(AtomicUsize::new(0));
@@ -1258,12 +1276,8 @@ pub async fn scan_inspect_network(
             handles2.push(std::thread::spawn(move || {
                 for j in 0..batch_len {
                     let (ip, name) = &alive_list[batch_start + j];
-                    let mut open = Vec::new();
-                    for port in probe_ports {
-                        if tcp_probe(*ip, port, Duration::from_millis(500)) {
-                            open.push(port);
-                        }
-                    }
+                    // 7 端口并行探测，单台最坏 300ms
+                    let open = probe_ports_parallel(*ip, &probe_ports, Duration::from_millis(300));
                     hits.lock().unwrap().push(InspectScanHit {
                         ip: ip.to_string(),
                         name: name.clone(),
