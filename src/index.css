@@ -7513,8 +7513,13 @@ body.native-window-drag-active .monitor-tabs button {
   flex-direction: column;
   min-width: 0;
 }
-.inspect-tool-panel > .inspect-toolbox-card {
-  max-width: 860px;
+.inspect-tool-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.inspect-tool-pane .inspect-toolbox-card {
+  max-width: none;
 }
 
 /* ============ 小工具：端口扫描 ============ */

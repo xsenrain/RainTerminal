@@ -605,3 +605,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 后端 ping_host_detailed：新增 TTL 读取（ICMP reply options 偏移 24）
 - **页头美化**：小工具页标题加图标徽标，更精致
 - **验证**：npm run build 通过；cargo test 2 passed
+
+---
+
+## 2026-09-08 · 小工具迭代 V3：界面铺满 + 切页不中断 + 事件缓冲防卡死
+
+- **界面铺满**：移除小工具卡片 860px 限宽，内容区铺满整个工作区
+- **切换不中断**：
+  - 小工具内部页签：四个工具面板常驻渲染（display 控制显隐），切走再回来执行继续、结果保留
+  - 主菜单切换：InspectToolbox / InspectWorkspace 改为 App 层常驻渲染，切到服务器/自动化等再回来，扫描/巡检状态不丢
+- **事件缓冲防卡死**（端口扫描 + 批量 Ping）：
+  - 后端并行探测事件可达数百条/秒（全端口 6 万+ 条），逐条 setState 会导致 UI 卡死
+  - 前端改为事件入队 ref buffer → 200ms 批量合并一次 state 更新，明细仍近实时（200ms 粒度）
+- **验证**：npm run build 通过；cargo test 2 passed

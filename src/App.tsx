@@ -2849,7 +2849,7 @@ function App() {
             )}
           </AnimatePresence>
         </aside>
-        {mainView === 'inspect' ? (
+        <div style={{ display: mainView === 'inspect' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
           <InspectWorkspace
             inspectDevices={inspectDevices}
             onAddInspectDevice={addInspectDevice}
@@ -2870,11 +2870,11 @@ function App() {
             inspectProgress={inspectProgress}
             setInspectProgress={setInspectProgress}
           />
-        ) : mainView === 'tools' ? (
-          <InspectToolbox
-            onNotify={(message) => setToast(message)}
-          />
-        ) : (
+        </div>
+        <div style={{ display: mainView === 'tools' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+          <InspectToolbox onNotify={(message) => setToast(message)} />
+        </div>
+        {mainView !== 'inspect' && mainView !== 'tools' && (
         <Profiler id="Workbench" onRender={handleRenderProfile}>
           <Workbench
             workspaces={workspaces}
@@ -10646,10 +10646,10 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
       </div>
 
       <div className="inspect-tool-panel">
-        {activeTool === 'discover' && (
-      <div className="inspect-toolbox-card">
-          <div className="inspect-toolbox-card-head">
-            <Wrench size={15} />
+        <div className="inspect-tool-pane" style={{ display: activeTool === 'discover' ? 'flex' : 'none' }}>
+          <div className="inspect-toolbox-card">
+            <div className="inspect-toolbox-card-head">
+              <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
             <span>{t('探测 IP 范围内在线设备及其开放端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS + 自定义），在线即上屏，单次扫描最长 10 秒自动停止')}</span>
           </div>
@@ -10775,12 +10775,18 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
               </table>
             </div>
           )}
+            </div>
+          </div>
+          <div className="inspect-tool-pane" style={{ display: activeTool === 'ports' ? 'flex' : 'none' }}>
+            <PortScanTool onNotify={onNotify} />
+          </div>
+          <div className="inspect-tool-pane" style={{ display: activeTool === 'ping' ? 'flex' : 'none' }}>
+            <PingTool onNotify={onNotify} />
+          </div>
+          <div className="inspect-tool-pane" style={{ display: activeTool === 'subnet' ? 'flex' : 'none' }}>
+            <SubnetCalcTool />
+          </div>
         </div>
-        )}
-        {activeTool === 'ports' && <PortScanTool onNotify={onNotify} />}
-        {activeTool === 'ping' && <PingTool onNotify={onNotify} />}
-        {activeTool === 'subnet' && <SubnetCalcTool />}
-      </div>
     </div>
   )
 }
@@ -10826,17 +10832,43 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [error, setError] = useState('')
   const [finished, setFinished] = useState(false)
 
+  // 端口事件缓冲：全端口扫描事件可达数万条/秒，先入队 200ms 批量合并，避免 UI 卡死
+  const portHitBufferRef = useRef<{ port: number; open: boolean }[]>([])
+  const portProgressRef = useRef<{ scanned: number; total: number } | null>(null)
+
+  useEffect(() => {
+    const flush = window.setInterval(() => {
+      const hits = portHitBufferRef.current
+      if (hits.length === 0 && portProgressRef.current === null) return
+      portHitBufferRef.current = []
+      if (hits.length > 0) {
+        setRows((prev) => {
+          const next = { ...prev }
+          for (const { port, open } of hits) next[port] = open
+          return next
+        })
+        setOpenPorts((prev) => {
+          const next = new Set(prev)
+          for (const { port, open } of hits) if (open) next.add(port)
+          return [...next].sort((a, b) => a - b)
+        })
+      }
+      if (portProgressRef.current !== null) {
+        setScanned(portProgressRef.current.scanned)
+        setTotal(portProgressRef.current.total)
+        portProgressRef.current = null
+      }
+    }, 200)
+    return () => window.clearInterval(flush)
+  }, [])
+
   useEffect(() => {
     const tasks = [
       listen<{ port: number; open: boolean }>('port-scan-hit', (event) => {
-        setRows((prev) => ({ ...prev, [event.payload.port]: event.payload.open }))
-        setOpenPorts((prev) =>
-          event.payload.open && !prev.includes(event.payload.port) ? [...prev, event.payload.port] : prev,
-        )
+        portHitBufferRef.current.push({ port: event.payload.port, open: event.payload.open })
       }).catch(() => () => undefined),
       listen<{ scanned: number; total: number }>('port-scan-progress', (event) => {
-        setScanned(event.payload.scanned)
-        setTotal(event.payload.total)
+        portProgressRef.current = { scanned: event.payload.scanned, total: event.payload.total }
       }).catch(() => () => undefined),
     ]
     return () => {
@@ -11020,29 +11052,49 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [errors, setErrors] = useState<string[]>([])
   const [finished, setFinished] = useState(false)
 
+  // 高频事件缓冲：后端并行 ping 事件可达数百条/秒，先入队，200ms 批量合并更新一次，明细仍近实时
+  const rowBufferRef = useRef<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }[]>([])
+
+  useEffect(() => {
+    const flush = window.setInterval(() => {
+      const batch = rowBufferRef.current
+      if (batch.length === 0) return
+      rowBufferRef.current = []
+      setSummary((prev) => {
+        const next = { ...prev }
+        for (const { ip, ok, rttMs } of batch) {
+          const cur = next[ip] ?? { ok: 0, fail: 0, rtts: [], lastOk: null }
+          next[ip] = {
+            ok: cur.ok + (ok ? 1 : 0),
+            fail: cur.fail + (ok ? 0 : 1),
+            rtts: ok ? [...cur.rtts, rttMs] : cur.rtts,
+            lastOk: ok,
+          }
+        }
+        return next
+      })
+      setDetail((prev) => {
+        const next = { ...prev }
+        for (const { ip, seq, ok, rttMs, ttl } of batch) {
+          const cur = next[ip] ?? { hostname: '', rows: [] }
+          if (cur.rows.some((r) => r.seq === seq)) continue
+          next[ip] = { hostname: cur.hostname, rows: [...cur.rows, { seq, ok, rttMs, ttl, time: '' }] }
+        }
+        return next
+      })
+    }, 200)
+    return () => window.clearInterval(flush)
+  }, [])
+
   useEffect(() => {
     const tasks = [
       listen<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }>('ping-batch-row', (event) => {
-        const { ip, ok, rttMs } = event.payload
-        setSummary((prev) => {
-          const cur = prev[ip] ?? { ok: 0, fail: 0, rtts: [], lastOk: null }
-          return {
-            ...prev,
-            [ip]: {
-              ok: cur.ok + (ok ? 1 : 0),
-              fail: cur.fail + (ok ? 0 : 1),
-              rtts: ok ? [...cur.rtts, rttMs] : cur.rtts,
-              lastOk: ok,
-            },
-          }
-        })
-        setDetail((prev) => {
-          const cur = prev[ip] ?? { hostname: '', rows: [] }
-          if (cur.rows.some((r) => r.seq === event.payload.seq)) return prev
-          return {
-            ...prev,
-            [ip]: { hostname: cur.hostname, rows: [...cur.rows, { seq: event.payload.seq, ok, rttMs, ttl: event.payload.ttl, time: '' }] },
-          }
+        rowBufferRef.current.push({
+          ip: event.payload.ip,
+          seq: event.payload.seq,
+          ok: event.payload.ok,
+          rttMs: event.payload.rttMs,
+          ttl: event.payload.ttl,
         })
       }).catch(() => () => undefined),
       listen<{ host: string; message: string }>('ping-batch-error', (event) => {
