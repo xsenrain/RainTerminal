@@ -53,9 +53,6 @@ function MonitorUplot({
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const plotRef = useRef<uPlot | null>(null)
-  const tipRef = useRef<HTMLDivElement | null>(null)
-  const tipTimeRef = useRef<HTMLSpanElement | null>(null)
-  const tipValRef = useRef<HTMLDivElement | null>(null)
   const [rebuildKey, setRebuildKey] = useState(0)
 
   // 是否网络速率双系列图
@@ -66,10 +63,18 @@ function MonitorUplot({
     if (!wrap) return
     const theme = readTheme()
 
-    const tip = tipRef.current
-    const tipTime = tipTimeRef.current
-    const tipVal = tipValRef.current
     const accent = theme.accent
+    // tooltip 由本 effect 创建，与图表同生命周期（cleanup 一并销毁，下次重建重新创建，
+    // 避免 React fiber 与真实 DOM 失同步导致 tooltip 永久消失）
+    const tip = document.createElement('div')
+    tip.className = 'uplot-tip'
+    tip.style.opacity = '0'
+    const tipTime = document.createElement('span')
+    tipTime.className = 'uplot-tip-time'
+    const tipVal = document.createElement('div')
+    tipVal.className = 'uplot-tip-vals'
+    tip.append(tipTime, tipVal)
+    wrap.appendChild(tip)
 
     const makeFill = (color: string) => {
       const hex = /^#[0-9a-f]{6}$/i.test(color)
@@ -91,7 +96,13 @@ function MonitorUplot({
       height: 260,
       padding: [12, 10, 6, 6],
       scales: {
-        x: { time: true },
+        x: {
+          time: true,
+          range: () => {
+            const now = Date.now() / 1000
+            return [now - 1200, now]
+          },
+        },
         y: isRate
           ? {
               range: (_self, _dataMin, dataMax) => {
@@ -252,7 +263,6 @@ function MonitorUplot({
         ? [[nowSec - 1200, nowSec], [null, null], [null, null]]
         : [[nowSec - 1200, nowSec], [null, null]]
       plot.setData(empty as unknown as uPlot.AlignedData)
-      plot.setScale('x', { min: nowSec - 1200, max: nowSec })
       return
     }
     const t0 = now - (n - 1) * SAMPLE_MS
@@ -273,18 +283,9 @@ function MonitorUplot({
     } else {
       plot.setData([times as unknown as number[], vals as (number | null)[]] as unknown as uPlot.AlignedData)
     }
-    // X 轴固定 20 分钟窗口（数据从右往左增长）
-    plot.setScale('x', { min: nowSec - 1200, max: nowSec })
   }, [rebuildKey, values, values2, isRate])
 
-  return (
-    <div className="monitor-uplot" ref={wrapRef}>
-      <div className="uplot-tip" ref={tipRef} style={{ opacity: 0 }}>
-        <span className="uplot-tip-time" ref={tipTimeRef} />
-        <div className="uplot-tip-vals" ref={tipValRef} />
-      </div>
-    </div>
-  )
+  return <div className="monitor-uplot" ref={wrapRef} />
 }
 
 export default MonitorUplot

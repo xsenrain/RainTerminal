@@ -935,3 +935,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   直接驱动 tooltip，不依赖 uPlot 内部 cursor 状态
 - 十字线仍由 uPlot cursor.x/y 原生绘制
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · tooltip根治：JS创建随图重建 + X轴range函数固定20分钟
+
+- 根因1：42e6b69引入的 cleanup wrap.replaceChildren() 把 React 渲染的 tooltip DOM 删除，
+  React fiber 失同步，之后任何重建 tooltip 都不再渲染 → 用户反馈 tooltip 消失
+  修复：tooltip 改由 effect 内 document.createElement 创建，与 uPlot 同生命周期，
+  cleanup 一并销毁，每次重建重新创建，不再依赖 React 渲染
+- 根因2：X轴 setScale('x') 不传 from 会被 uPlot 每次 setData 的 range 计算覆盖
+  （实测只显示约3分钟数据窗口而非20分钟）
+  修复：scales.x 定义 range 函数固定 [now-1200s, now] 窗口，100% 生效
+- 验证：npm build 通过
