@@ -177,6 +177,12 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
     }
     const n = values.length
     const now = Date.now()
+    const nowSec = now / 1000
+    if (n === 0) {
+      plot.setData([[nowSec - 1200, nowSec], [null, null]])
+      plot.setScale('x', { min: nowSec - 1200, max: nowSec })
+      return
+    }
     const t0 = now - (n - 1) * SAMPLE_MS
     const times = new Float64Array(n)
     const vals: (number | null)[] = new Array(n).fill(null)
@@ -186,7 +192,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
       vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : null
     }
     plot.setData([times as unknown as number[], vals as (number | null)[] as unknown as number[]])
-    // 强制 y 轴贴合数据（铺满图高），x 轴跟随数据窗口
+    // 强制 y 轴贴合数据（铺满图高）
     const finite = vals.filter((v): v is number => v !== null && Number.isFinite(v))
     if (finite.length >= 2) {
       const dMin = Math.min(...finite)
@@ -198,7 +204,8 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
         plot.setScale('y', { min: lo, max: hi })
       }
     }
-    plot.setScale('x', { min: t0, max: t0 + 1200 })
+    // X 轴固定 20 分钟窗口（数据从右往左增长）
+    plot.setScale('x', { min: nowSec - 1200, max: nowSec })
   }, [rebuildKey, values])
 
   return (
