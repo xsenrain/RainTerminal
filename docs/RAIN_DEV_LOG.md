@@ -1259,3 +1259,10 @@ MTR 路由追踪（mtr tab）：
 - 各工具条件：网段=scanning|有行|error；端口=scanning|scanned>0|error；
   Ping=running|有summary|rounds>0|errors；子网=有result|error；MTR=running|有hops|error；密码=有passwords
 - 效果：无数据时页面自然矮，有数据卡片铺满到底内部滚动
+
+---
+
+## 2026-09-08 · 密码生成器新增清空按钮
+
+- 导出按钮右侧新增“清空”按钮（Trash2图标）
+- 点击清空密码列表与复制状态，并提示“已清空”

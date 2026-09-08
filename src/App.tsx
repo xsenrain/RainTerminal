@@ -12172,6 +12172,19 @@ function PasswordGenTool({ onNotify, onContent }: { onNotify: (message: string) 
           <Download size={13} />
           {t('导出')}
         </button>
+        <button
+          className="ghost-button compact"
+          type="button"
+          onClick={() => {
+            setPasswords([])
+            setCopied('')
+            onNotify(t('已清空'))
+          }}
+          disabled={passwords.length === 0}
+        >
+          <Trash2 size={13} />
+          {t('清空')}
+        </button>
       </div>
       {passwords.length > 0 && (
         <div className="inspect-pwd-list">
