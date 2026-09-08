@@ -9094,10 +9094,10 @@ function MachineMonitorWidget({
           lastNetworkRef.current = networkTotal
           const networkValue = Math.min(100, networkDelta / 1024 / 1024)
           setHistory((current) => ({
-            cpu: [...current.cpu, nextStats.cpu_usage].slice(-24),
-            memory: [...current.memory, memoryPercent].slice(-24),
-            disk: [...current.disk, diskPercent].slice(-24),
-            network: [...current.network, networkValue].slice(-24),
+            cpu: [...current.cpu, nextStats.cpu_usage].slice(-60),
+            memory: [...current.memory, memoryPercent].slice(-60),
+            disk: [...current.disk, diskPercent].slice(-60),
+            network: [...current.network, networkValue].slice(-60),
           }))
         })
       })
@@ -16184,27 +16184,85 @@ function getMonitorCards(stats: LocalSystemStats | null) {
   ]
 }
 
+function smoothPath(pts: { x: number; y: number }[]) {
+  if (pts.length < 2) return ''
+  let d = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[i + 2] ?? p2
+    const c1x = p1.x + (p2.x - p0.x) / 6
+    const c1y = p1.y + (p2.y - p0.y) / 6
+    const c2x = p2.x - (p3.x - p1.x) / 6
+    const c2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return d
+}
+
 function MonitorSparkline({ values }: { values: number[] }) {
   const { t } = useAppLocale()
   const safeValues = values.length > 1 ? values : [0, values[0] ?? 0]
   const width = 220
-  const height = 92
-  const points = safeValues
-    .map((value, index) => {
-      const x = (index / Math.max(1, safeValues.length - 1)) * width
-      const y = height - (Math.max(0, Math.min(100, value)) / 100) * height
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-  const area = `0,${height} ${points} ${width},${height}`
+  const height = 96
+  const padL = 24
+  const padR = 8
+  const padT = 8
+  const padB = 12
+  const innerW = width - padL - padR
+  const innerH = height - padT - padB
+  const pts = safeValues.map((value, index) => {
+    const x = padL + (index / Math.max(1, safeValues.length - 1)) * innerW
+    const y = padT + innerH - (Math.max(0, Math.min(100, value)) / 100) * innerH
+    return { x, y, v: value }
+  })
+  const linePath = smoothPath(pts)
+  const areaPath = pts.length > 1
+    ? `${linePath} L ${pts[pts.length - 1].x.toFixed(1)},${padT + innerH} L ${pts[0].x.toFixed(1)},${padT + innerH} Z`
+    : ''
+  const last = pts[pts.length - 1]
+  let maxP = pts[0]
+  let minP = pts[0]
+  for (const p of pts) {
+    if (p.v > maxP.v) maxP = p
+    if (p.v < minP.v) minP = p
+  }
+  const isExtreme = (p: { x: number; y: number; v: number }) => p === maxP || p === minP
+  const gridValues = [0, 25, 50, 75, 100]
 
   return (
     <svg className="monitor-sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t('监控图表')}>
-      <polyline points="0,23 220,23" />
-      <polyline points="0,46 220,46" />
-      <polyline points="0,69 220,69" />
-      <polygon points={area} />
-      <polyline className="line" points={points} />
+      {gridValues.map((g) => {
+        const gy = padT + innerH - (g / 100) * innerH
+        return (
+          <g key={g}>
+            <polyline points={`${padL},${gy.toFixed(1)} ${width - padR},${gy.toFixed(1)}`} />
+            <text x={2} y={(gy + 3).toFixed(1)} className="axis-label">{g}%</text>
+          </g>
+        )
+      })}
+      {pts.length > 1 && <polygon points={areaPath} />}
+      <path className="line" d={linePath} fill="none" />
+      {!isExtreme(maxP) && <circle cx={maxP.x} cy={maxP.y} r={2.6} className="extreme-dot max" />}
+      {!isExtreme(minP) && <circle cx={minP.x} cy={minP.y} r={2.6} className="extreme-dot min" />}
+      {!isExtreme(maxP) && (
+        <text x={(maxP.x + 4).toFixed(1)} y={(maxP.y - 3).toFixed(1)} className="extreme-label">
+          {maxP.v.toFixed(1)}
+        </text>
+      )}
+      {!isExtreme(minP) && (
+        <text x={(minP.x + 4).toFixed(1)} y={(minP.y + 8).toFixed(1)} className="extreme-label">
+          {minP.v.toFixed(1)}
+        </text>
+      )}
+      <circle cx={last.x} cy={last.y} r={3} className="current-dot" />
+      <text x={padL} y={padT - 1} className="current-val">
+        {t('当前')} {last.v.toFixed(1)}%
+      </text>
+      <text x={width - padR} y={height - 1} textAnchor="end" className="sample-note">
+        {safeValues.length} {t('次采样')}
+      </text>
     </svg>
   )
 }
