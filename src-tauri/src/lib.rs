@@ -1,6 +1,9 @@
 mod batch_inspect;
 mod credential_store;
 mod iron_rdp;
+mod serial_session;
+mod session_log;
+mod telnet_session;
 
 use batch_inspect::batch_execute_inspect;
 use credential_store::{
@@ -10,6 +13,14 @@ use iron_rdp::{
     rdp_cancel_file_transfer, rdp_clipboard_file_paths, rdp_clipboard_sequence_number, rdp_connect,
     rdp_disconnect, rdp_file_clipboard_progress, rdp_input, rdp_offer_clipboard_files,
     rdp_upload_files, IronRdpSessions, RdpFileTransfers,
+};
+use serial_session::{
+    serial_connect, serial_list_ports, serial_session_health, serial_session_stop,
+    serial_session_write, SerialSessions,
+};
+use telnet_session::{
+    telnet_connect, telnet_session_health, telnet_session_resize, telnet_session_stop,
+    telnet_session_write, TelnetSessions,
 };
 use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
@@ -1977,6 +1988,17 @@ async fn choose_file_download_destination(
 }
 
 #[tauri::command]
+async fn choose_log_directory() -> Result<Option<String>, String> {
+    run_blocking(move || {
+        Ok(rfd::FileDialog::new()
+            .set_title("选择日志保存目录")
+            .pick_folder()
+            .map(|folder| folder.to_string_lossy().into_owned()))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn choose_file_upload_sources() -> Result<Vec<String>, String> {
     run_blocking(move || {
         Ok(rfd::FileDialog::new()
@@ -2917,10 +2939,28 @@ fn ssh_connect(
     port: u16,
     cols: u32,
     rows: u32,
+    log_enabled: Option<bool>,
+    log_path: Option<String>,
+    log_name: Option<String>,
 ) -> Result<(), String> {
     validate_ssh_part(&session_id, "session id")?;
     validate_ssh_part(&host, "host")?;
     validate_ssh_part(&user, "user")?;
+
+    if let Err(error) = session_log::session_log_open(
+        &session_id,
+        log_enabled.unwrap_or(false),
+        log_path.as_deref(),
+        log_name.as_deref().unwrap_or(&host),
+    ) {
+        let _ = app.emit(
+            "ssh:error",
+            SshStatusPayload {
+                session_id: session_id.clone(),
+                message: error,
+            },
+        );
+    }
 
     register_ssh_auth_profile(SshAuthProfile {
         host: host.clone(),
@@ -3442,6 +3482,7 @@ fn run_native_ssh_worker(
             {
                 let data = std::mem::take(&mut output_buffer);
                 let bytes = data.len();
+                session_log::session_log_write(&reader_session_id, &data);
                 let _ = reader_app.emit(
                     "ssh:data",
                     SshPayload {
@@ -3464,6 +3505,7 @@ fn run_native_ssh_worker(
 
         if !output_buffer.is_empty() {
             let bytes = output_buffer.len();
+            session_log::session_log_write(&reader_session_id, &output_buffer);
             let _ = reader_app.emit(
                 "ssh:data",
                 SshPayload {
@@ -3623,6 +3665,7 @@ fn run_native_ssh_worker(
     );
 
     if should_emit_closed {
+        session_log::session_log_close(&session_id);
         let _ = app.emit(
             "ssh:closed",
             SshStatusPayload {
@@ -3823,6 +3866,7 @@ fn run_ssh_worker(
             {
                 let data = std::mem::take(&mut output_buffer);
                 let bytes = data.len();
+                session_log::session_log_write(&reader_session_id, &data);
                 let _ = reader_app.emit(
                     "ssh:data",
                     SshPayload {
@@ -3845,6 +3889,7 @@ fn run_ssh_worker(
 
         if !output_buffer.is_empty() {
             let bytes = output_buffer.len();
+            session_log::session_log_write(&reader_session_id, &output_buffer);
             let _ = reader_app.emit(
                 "ssh:data",
                 SshPayload {
@@ -3978,6 +4023,7 @@ fn run_ssh_worker(
     let _ = child.kill();
     let _ = child.wait();
     if should_emit_closed {
+        session_log::session_log_close(&session_id);
         let _ = app.emit(
             "ssh:closed",
             SshStatusPayload {
@@ -7347,6 +7393,8 @@ pub fn run() {
         .manage(SshConnectLimiter::default())
         .manage(RemoteAuxSessions::default())
         .manage(LocalShellSessions::default())
+        .manage(TelnetSessions::default())
+        .manage(SerialSessions::default())
         .manage(LocalStatsCache::default())
         .manage(RemoteStatsCache::default())
         .manage(LocalProcessSampler::default())
@@ -7379,6 +7427,7 @@ pub fn run() {
             local_write_file,
             choose_file_download_destination,
             choose_file_upload_sources,
+            choose_log_directory,
             choose_ssh_private_key,
             choose_app_background,
             clear_app_background,
@@ -7436,6 +7485,16 @@ pub fn run() {
             ssh_tunnel_start,
             ssh_tunnel_stop,
             ssh_tunnel_list,
+            telnet_connect,
+            telnet_session_write,
+            telnet_session_resize,
+            telnet_session_stop,
+            telnet_session_health,
+            serial_list_ports,
+            serial_connect,
+            serial_session_write,
+            serial_session_stop,
+            serial_session_health,
             batch_execute_inspect,
             batch_inspect::get_inspect_log_dir,
             batch_inspect::set_inspect_log_dir,

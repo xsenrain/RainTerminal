@@ -948,3 +948,25 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   （实测只显示约3分钟数据窗口而非20分钟）
   修复：scales.x 定义 range 函数固定 [now-1200s, now] 窗口，100% 生效
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 阶段A：新增 Telnet 与 Serial 连接方式
+
+- 后端新增 src-tauri/src/telnet_session.rs：
+  - 标准 Telnet IAC 协商（ECHO/SGA/NAWS/TTYPE 响应，其余选项 WONT/DONT 拒绝）
+  - 连接线程 + NAWS 窗口自适应 + 事件 telnet:connected/data/error/closed + health
+- 后端新增 src-tauri/src/serial_session.rs：
+  - serialport crate：串口枚举 serial_list_ports + 参数（波特率/数据位/停止位/校验/流控）+ 读写
+  - 事件 serial:connected/data/error/closed + health
+- 后端新增 src-tauri/src/session_log.rs（SSH/Telnet/Serial 通用会话日志）：
+  - 可选开关，文件名 名称_时间戳.log，默认程序运行目录/logs，目录可自定义
+  - ssh_connect 增加 logEnabled/logPath/logName 参数，两条读循环同步写日志
+- 新增 choose_log_directory 命令（选日志目录）
+- 前端：
+  - ServerProfile 增加 protocol(ssh/telnet/serial)/serialPort/baudRate/dataBits/stopBits/parity/flowControl/logEnabled/logPath
+  - ServerModal 按协议动态显示表单（SSH认证区 / Telnet端口 / Serial串口参数）+ 日志开关+目录选择
+  - RemoteTerminalWidget 多协议：startTerminalSession 按协议调用，事件按前缀监听，健康检查对应命令
+  - 侧栏设备列表显示协议徽标（Telnet/Serial）
+- Cargo.toml 增加 serialport = 4.4
+- 验证：npm build + cargo check 通过

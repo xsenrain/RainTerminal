@@ -37,6 +37,7 @@ ironrdp = { version = "0.17.0", features = ["input"] }
 ironrdp-cliprdr = "0.7.0"
 ironrdp-cliprdr-native = "0.7.0"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
+serialport = "4.4"
 dns-lookup = "2.0"
 
 [target.'cfg(windows)'.dependencies]

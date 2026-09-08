@@ -194,6 +194,8 @@ function useAppLocale() {
   return useContext(AppLocaleContext)
 }
 
+export type ServerProtocol = 'ssh' | 'telnet' | 'serial'
+
 export type ServerProfile = {
   id: string
   name: string
@@ -204,6 +206,15 @@ export type ServerProfile = {
   auth: 'Password' | 'Key' | 'Agent'
   password?: string
   privateKeyPath?: string
+  protocol?: ServerProtocol
+  serialPort?: string
+  baudRate?: number
+  dataBits?: number
+  stopBits?: number
+  parity?: string
+  flowControl?: string
+  logEnabled?: boolean
+  logPath?: string
 }
 
 type ServerDraft = Omit<ServerProfile, 'id'> & { id?: string }
@@ -845,6 +856,14 @@ function hasSshAuthentication(server?: ServerProfile) {
   return Boolean(server.password)
 }
 
+/** 设备连接前校验：SSH 需要认证信息；Telnet/Serial 只需地址/串口即可 */
+function hasConnectionAuthentication(server?: ServerProfile) {
+  if (!server) return false
+  if (server.protocol === 'telnet') return Boolean(server.host && server.port > 0)
+  if (server.protocol === 'serial') return Boolean(server.serialPort?.trim())
+  return hasSshAuthentication(server)
+}
+
 function sshAuthenticationHint(server: ServerProfile) {
   if (server.auth === 'Agent') return 'SSH Agent'
   if (server.auth === 'Key') return server.privateKeyPath?.trim() ? '私钥' : '需要私钥'
@@ -963,6 +982,15 @@ const blankDraft: ServerDraft = {
   auth: 'Password',
   password: '',
   privateKeyPath: '',
+  protocol: 'ssh',
+  serialPort: '',
+  baudRate: 9600,
+  dataBits: 8,
+  stopBits: 1,
+  parity: 'none',
+  flowControl: 'none',
+  logEnabled: false,
+  logPath: '',
 }
 
 const blankRemoteDesktopDraft: RemoteDesktopDraft = {
@@ -1833,20 +1861,24 @@ function App() {
       selectServer(server.id)
     }
     openContextMenu(event, [
-      { label: '打开 SSH 终端', hint: sshAuthenticationHint(server), onClick: () => connectServerFromList(server) },
+      {
+        label: server.protocol === 'telnet' ? '打开 Telnet 终端' : server.protocol === 'serial' ? '打开串口终端' : '打开 SSH 终端',
+        hint: server.protocol === 'serial' ? (server.serialPort ?? '') : sshAuthenticationHint(server),
+        onClick: () => connectServerFromList(server),
+      },
       { label: '打开文件管理', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'files') },
       { label: '打开机器监控', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'monitor') },
       { label: '打开系统进程', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'processes') },
-      { label: '编辑服务器', hint: server.host, onClick: () => setServerModal(server) },
+      { label: '编辑设备', hint: server.host, onClick: () => setServerModal(server) },
       {
         label: '复制连接地址',
-        hint: `${server.user}@${server.host}:${server.port}`,
+        hint: server.protocol === 'serial' ? (server.serialPort ?? '') : `${server.user}@${server.host}:${server.port}`,
         onClick: () => {
-          void navigator.clipboard.writeText(`${server.user}@${server.host}:${server.port}`)
+          void navigator.clipboard.writeText(server.protocol === 'serial' ? (server.serialPort ?? '') : `${server.user}@${server.host}:${server.port}`)
           setToast('连接地址已复制')
         },
       },
-      { label: '删除服务器', hint: server.name, danger: true, onClick: () => deleteServer(server.id) },
+      { label: '删除设备', hint: server.name, danger: true, onClick: () => deleteServer(server.id) },
     ])
   }
 
@@ -1862,6 +1894,10 @@ function App() {
     }
 
     if (!hasSshAuthentication(selectedServer)) {
+      if (selectedServer.protocol && selectedServer.protocol !== 'ssh') {
+        setToast('Telnet/串口设备请在服务器工作台中打开终端连接')
+        return
+      }
       setConnectionState('error')
       setToast('请补全 SSH 认证信息后再连接')
       return
@@ -3704,10 +3740,25 @@ function SourceList({
               >
                 <span className={`connection-dot ${serverConnectionStates[server.id] ?? (server.id === selectedServerId ? connectionState : 'disconnected')}`} />
                 <span className="server-main">
-                  <span className="server-name">{server.name}</span>
-                  <span className="server-host">{server.user}@{server.host}</span>
+                  <span className="server-name">
+                    {server.name}
+                    {server.protocol && server.protocol !== 'ssh' && (
+                      <span className={`server-protocol-badge protocol-${server.protocol}`}>
+                        {server.protocol === 'telnet' ? 'Telnet' : 'Serial'}
+                      </span>
+                    )}
+                  </span>
+                  <span className="server-host">
+                    {server.protocol === 'serial'
+                      ? (server.serialPort ?? '')
+                      : server.protocol === 'telnet'
+                        ? server.host
+                        : `${server.user}@${server.host}`}
+                  </span>
                 </span>
-                <span className="server-port">{server.port}</span>
+                <span className="server-port">
+                  {server.protocol === 'serial' ? (server.baudRate ?? 9600) : server.port}
+                </span>
               </button>
             ))}
           {servers.length === 0 && (
@@ -6199,6 +6250,52 @@ function RemoteTerminalWidget({
   const onStatusRef = useRef(onStatus)
   const focusedRef = useRef(focused)
   const intentionalCloseRef = useRef(false)
+  const eventPrefix = server?.protocol === 'telnet' ? 'telnet' : server?.protocol === 'serial' ? 'serial' : 'ssh'
+  const protocolLabel = server?.protocol === 'telnet' ? 'Telnet' : server?.protocol === 'serial' ? 'Serial' : 'SSH'
+
+  function startTerminalSession(targetServer: ServerProfile, size: { cols: number; rows: number }) {
+    if (targetServer.protocol === 'telnet') {
+      return invoke('telnet_connect', {
+        sessionId: sessionIdRef.current,
+        host: targetServer.host,
+        port: targetServer.port,
+        cols: size.cols,
+        rows: size.rows,
+        logEnabled: Boolean(targetServer.logEnabled),
+        logPath: targetServer.logPath || null,
+        name: targetServer.name,
+      })
+    }
+    if (targetServer.protocol === 'serial') {
+      return invoke('serial_connect', {
+        sessionId: sessionIdRef.current,
+        portName: targetServer.serialPort ?? '',
+        baudRate: targetServer.baudRate ?? 9600,
+        dataBits: targetServer.dataBits ?? 8,
+        stopBits: targetServer.stopBits ?? 1,
+        parity: targetServer.parity ?? 'none',
+        flowControl: targetServer.flowControl ?? 'none',
+        logEnabled: Boolean(targetServer.logEnabled),
+        logPath: targetServer.logPath || null,
+        name: targetServer.name,
+      })
+    }
+    return invoke('ssh_connect', {
+      sessionId: sessionIdRef.current,
+      host: targetServer.host,
+      user: targetServer.user,
+      password: targetServer.password ?? '',
+      authMethod: targetServer.auth,
+      privateKeyPath: targetServer.privateKeyPath || null,
+      port: targetServer.port,
+      cols: size.cols,
+      rows: size.rows,
+      logEnabled: Boolean(targetServer.logEnabled),
+      logPath: targetServer.logPath || null,
+      logName: targetServer.name,
+    })
+  }
+
   const outputBacklogRef = useRef(remoteTerminalOutputCache.get(sessionId) ?? '')
   const writeQueueRef = useRef('')
   const writeFrameRef = useRef<number | null>(null)
@@ -6244,8 +6341,8 @@ function RemoteTerminalWidget({
   useEffect(() => {
     function handleConnectionRequest(event: Event) {
       if ((event as CustomEvent<string>).detail !== sessionIdRef.current) return
-      if (!hasSshAuthentication(server)) {
-        if (server) reportRemoteStatus(server.id, 'error', '服务器连接信息不完整')
+      if (!hasConnectionAuthentication(server)) {
+        if (server) reportRemoteStatus(server.id, 'error', '设备连接信息不完整')
         return
       }
       intentionalCloseRef.current = false
@@ -6259,8 +6356,8 @@ function RemoteTerminalWidget({
   }, [server])
 
   function requestRemoteConnection() {
-    if (!hasSshAuthentication(server)) {
-      if (server) reportRemoteStatus(server.id, 'error', '服务器连接信息不完整')
+    if (!hasConnectionAuthentication(server)) {
+      if (server) reportRemoteStatus(server.id, 'error', '设备连接信息不完整')
       return
     }
     intentionalCloseRef.current = false
@@ -6276,7 +6373,7 @@ function RemoteTerminalWidget({
   }
 
   function scheduleRemoteReconnect(message: string) {
-    if (!server || !connectionRequestedRef.current || intentionalCloseRef.current || reconnectBlockedRef.current || reconnectTimerRef.current !== null || !hasSshAuthentication(server)) return
+    if (!server || !connectionRequestedRef.current || intentionalCloseRef.current || reconnectBlockedRef.current || reconnectTimerRef.current !== null || !hasConnectionAuthentication(server)) return
     const targetServer = server
     const normalized = message.toLowerCase()
     if (normalized.includes('authentication') || normalized.includes('password auth') || normalized.includes('permission denied')) return
@@ -6295,19 +6392,9 @@ function RemoteTerminalWidget({
 
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = null
-      if (intentionalCloseRef.current || !hasSshAuthentication(targetServer)) return
+      if (intentionalCloseRef.current || !hasConnectionAuthentication(targetServer)) return
       const size = getCurrentTerminalSize()
-      void invoke('ssh_connect', {
-        sessionId: sessionIdRef.current,
-        host: targetServer.host,
-        user: targetServer.user,
-        password: targetServer.password ?? '',
-        authMethod: targetServer.auth,
-        privateKeyPath: targetServer.privateKeyPath || null,
-        port: targetServer.port,
-        cols: size.cols,
-        rows: size.rows,
-      }).catch((error) => scheduleRemoteReconnect(String(error)))
+      void startTerminalSession(targetServer, size).catch((error) => scheduleRemoteReconnect(String(error)))
     }, delay)
   }
 
@@ -6689,9 +6776,9 @@ function RemoteTerminalWidget({
       return undefined
     }
 
-    if (!hasSshAuthentication(server)) {
-      appendRemoteTerminalOutput('该服务器的 SSH 认证信息不完整，请先编辑服务器配置。\r\n')
-      reportRemoteStatus(server.id, 'error', '服务器缺少 SSH 认证信息')
+    if (!hasConnectionAuthentication(server)) {
+      appendRemoteTerminalOutput('该设备的连接信息不完整，请先编辑设备配置。\r\n')
+      reportRemoteStatus(server.id, 'error', '设备缺少连接信息')
       return undefined
     }
 
@@ -6723,21 +6810,11 @@ function RemoteTerminalWidget({
     terminalRef.current?.reset()
     fitRemoteTerminalNow('before-connect', false)
     const initialTerminalSize = getCurrentTerminalSize()
-    appendRemoteTerminalOutput(`${title}\r\n正在连接 ${server.user}@${server.host}:${server.port} ...\r\n\r\n`)
+    appendRemoteTerminalOutput(`${title}\r\n正在连接 ${server.protocol === 'serial' ? (server.serialPort ?? '') : `${server.host}:${server.port}`} ...\r\n\r\n`)
     reportRemoteStatus(server.id, 'connecting', `${server.name} 正在连接`)
     remoteTerminalConnectingSessions.add(sshSessionId)
 
-    void invoke('ssh_connect', {
-      sessionId: sshSessionId,
-      host: server.host,
-      user: server.user,
-      password: server.password ?? '',
-      authMethod: server.auth,
-      privateKeyPath: server.privateKeyPath || null,
-      port: server.port,
-      cols: initialTerminalSize.cols,
-      rows: initialTerminalSize.rows,
-    })
+    void startTerminalSession(server, initialTerminalSize)
       .then(() => {
         reportRemoteStatus(server.id, 'connecting', `${server.name} 正在连接`)
       })
@@ -6745,8 +6822,8 @@ function RemoteTerminalWidget({
         remoteTerminalConnectingSessions.delete(sshSessionId)
         remoteTerminalConnectedSessions.delete(sshSessionId)
         sshStartedRef.current = false
-        appendRemoteTerminalOutput(`\r\nSSH 连接失败：${String(error)}\r\n`)
-        reportRemoteStatus(server.id, 'error', `SSH 失败：${String(error)}`)
+        appendRemoteTerminalOutput(`\r\n${protocolLabel} 连接失败：${String(error)}\r\n`)
+        reportRemoteStatus(server.id, 'error', `${protocolLabel} 失败：${String(error)}`)
       })
 
     return () => {
@@ -6757,7 +6834,7 @@ function RemoteTerminalWidget({
 
   useEffect(() => {
     const unlistenTasks = [
-      listen<SshEventPayload>('ssh:connected', (event) => {
+      listen<SshEventPayload>(`${eventPrefix}:connected`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
         diag('ssh-event', `connected server=${server?.host ?? 'unknown'} session=${sessionIdRef.current}`)
         remoteTerminalConnectingSessions.delete(sessionIdRef.current)
@@ -6778,7 +6855,7 @@ function RemoteTerminalWidget({
         fitRemoteTerminal('connected')
         if (server) reportRemoteStatus(server.id, 'connected', `${server.name} 已连接`)
       }).catch(() => () => undefined),
-      listen<SshEventPayload>('ssh:data', (event) => {
+      listen<SshEventPayload>(`${eventPrefix}:data`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
         const data = event.payload.data ?? ''
         if (data && reconnectAwaitingDataRef.current) {
@@ -6793,7 +6870,7 @@ function RemoteTerminalWidget({
         }
         appendRemoteTerminalOutput(data)
       }).catch(() => () => undefined),
-      listen<SshHealthPayload>('ssh:health', (event) => {
+      listen<SshHealthPayload>(`${eventPrefix}:health`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
         setHealth(event.payload)
         if (event.payload.connected && event.payload.connected_ms >= 30_000) {
@@ -6804,7 +6881,7 @@ function RemoteTerminalWidget({
           sshStartedRef.current = false
         }
       }).catch(() => () => undefined),
-      listen<SshEventPayload>('ssh:error', (event) => {
+      listen<SshEventPayload>(`${eventPrefix}:error`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
         const message = event.payload.message ?? 'SSH error'
         diag('ssh-event', `error server=${server?.host ?? 'unknown'} message=${message}`)
@@ -6818,7 +6895,7 @@ function RemoteTerminalWidget({
         if (server) reportRemoteStatus(server.id, 'error', message)
         scheduleRemoteReconnect(message)
       }).catch(() => () => undefined),
-      listen<SshEventPayload>('ssh:closed', (event) => {
+      listen<SshEventPayload>(`${eventPrefix}:closed`, (event) => {
         if (event.payload.session_id !== sessionIdRef.current) return
         diag('ssh-event', `closed server=${server?.host ?? 'unknown'} intentional=${intentionalCloseRef.current}`)
         remoteTerminalConnectingSessions.delete(sessionIdRef.current)
@@ -6842,15 +6919,15 @@ function RemoteTerminalWidget({
   }, [server])
 
   useEffect(() => {
-    if (!hasSshAuthentication(server)) return
+    if (!hasConnectionAuthentication(server)) return
     const timer = window.setInterval(() => {
       if (intentionalCloseRef.current || !sshStartedRef.current || reconnectTimerRef.current !== null) return
-      void invoke<SshHealthPayload>('ssh_session_health', { sessionId: sessionIdRef.current })
+      void invoke<SshHealthPayload>(`${eventPrefix}_session_health`, { sessionId: sessionIdRef.current })
         .then((payload) => {
           setHealth(payload)
-          if (!payload.connected) scheduleRemoteReconnect('SSH health check reported a closed session')
+          if (!payload.connected) scheduleRemoteReconnect(`${protocolLabel} health check reported a closed session`)
         })
-        .catch((error) => scheduleRemoteReconnect(`SSH health check failed: ${String(error)}`))
+        .catch((error) => scheduleRemoteReconnect(`${protocolLabel} health check failed: ${String(error)}`))
     }, 8000)
     return () => window.clearInterval(timer)
   }, [server])
@@ -6874,13 +6951,13 @@ function RemoteTerminalWidget({
     return (
       <div className="terminal-standby-host">
         <span className="terminal-standby-icon"><Terminal size={22} /></span>
-        <strong>{t('SSH 终端待命')}</strong>
-        <span>{server ? `${server.user}@${server.host}:${server.port}` : t('服务器配置缺失')}</span>
-        <button type="button" onClick={requestRemoteConnection} disabled={!hasSshAuthentication(server)}>
+        <strong>{t(`${protocolLabel} 终端待命`)}</strong>
+        <span>{server ? (server.protocol === 'serial' ? (server.serialPort ?? '') : `${server.host}:${server.port}`) : t('设备配置缺失')}</span>
+        <button type="button" onClick={requestRemoteConnection} disabled={!hasConnectionAuthentication(server)}>
           <Wifi size={14} />
-          {t('连接 SSH')}
+          {t(`连接 ${protocolLabel}`)}
         </button>
-        {server && !hasSshAuthentication(server) && <em>{t('请先在服务器配置中补全 SSH 认证信息')}</em>}
+        {server && !hasConnectionAuthentication(server) && <em>{t('请先在设备配置中补全连接信息')}</em>}
       </div>
     )
   }
@@ -6889,7 +6966,7 @@ function RemoteTerminalWidget({
     return (
       <button className="terminal-sleep-host" type="button" onClick={onActivate}>
         <strong>{server?.name || title}</strong>
-        <span>{server ? `${server.user}@${server.host}:${server.port}` : '服务器配置缺失'}</span>
+        <span>{server ? (server.protocol === 'serial' ? (server.serialPort ?? '') : `${server.host}:${server.port}`) : '设备配置缺失'}</span>
         <em>{t(formatSshHealth(health))}</em>
         <code>{t(getRemoteTerminalPreview(outputBacklogRef.current))}</code>
       </button>
@@ -13683,6 +13760,26 @@ function ServerModal({
 }) {
   const { t } = useAppLocale()
   const [form, setForm] = useState<ServerDraft>(draft)
+  const [serialPorts, setSerialPorts] = useState<string[]>([])
+  const protocol = form.protocol ?? 'ssh'
+
+  useEffect(() => {
+    if (protocol !== 'serial') return
+    void invoke<{ name: string; port_type: string }[]>('serial_list_ports')
+      .then((ports) => setSerialPorts(ports.map((port) => port.name)))
+      .catch(() => setSerialPorts([]))
+  }, [protocol])
+
+  const switchProtocol = (next: ServerProtocol) => {
+    setForm((current) => ({
+      ...current,
+      protocol: next,
+      port: next === 'telnet' ? 23 : next === 'serial' ? current.port : 22,
+      user: next === 'serial' ? '' : current.user || 'root',
+      auth: next === 'ssh' ? current.auth : 'Password',
+      password: next === 'ssh' ? current.password : '',
+    }))
+  }
 
   return (
     <motion.div
@@ -13707,14 +13804,14 @@ function ServerModal({
       >
         <div className="modal-header">
           <div>
-            <p className="section-title">{t('服务器配置')}</p>
-            <h2>{t(draft.id ? '编辑服务器' : '添加服务器')}</h2>
+            <p className="section-title">{t('连接配置')}</p>
+            <h2>{t(draft.id ? '编辑设备' : '添加设备')}</h2>
           </div>
           <IconButton label={t('关闭')} onClick={onCancel}>
             <X size={16} />
           </IconButton>
         </div>
-        {!draft.id && (
+        {!draft.id && protocol !== 'serial' && (
           <ConnectionTextImport
             kind="ssh"
             onImport={(values) => setForm((current) => ({
@@ -13729,49 +13826,188 @@ function ServerModal({
             }))}
           />
         )}
-        <EditableField label={t('名称')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <EditableField label={t('主机')} value={form.host} onChange={(host) => setForm({ ...form, host })} required />
-        <div className="field-grid">
-          <EditableField label={t('用户')} value={form.user} onChange={(user) => setForm({ ...form, user })} />
-          <EditableField
-            label={t('端口')}
-            value={`${form.port}`}
-            onChange={(port) => setForm({ ...form, port: Number(port) || 22 })}
-          />
-        </div>
-        <EditableField label={t('分组')} value={form.group} onChange={(group) => setForm({ ...form, group })} />
         <label className="field">
-          <span>{t('认证方式')}</span>
+          <span>{t('连接类型')}</span>
           <select
-            value={form.auth}
-            onChange={(event) => setForm({
-              ...form,
-              auth: event.target.value as ServerProfile['auth'],
-              password: '',
-            })}
+            value={protocol}
+            onChange={(event) => switchProtocol(event.target.value as ServerProtocol)}
           >
-            <option value="Password">{t('密码认证')}</option>
-            <option value="Key">{t('SSH 私钥')}</option>
-            <option value="Agent">SSH Agent</option>
+            <option value="ssh">SSH</option>
+            <option value="telnet">Telnet</option>
+            <option value="serial">{t('串口')} (Serial)</option>
           </select>
         </label>
-        {form.auth === 'Key' && (
+        <EditableField label={t('名称')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
+        {protocol !== 'serial' && (
+          <>
+            <EditableField
+              label={t('主机')}
+              value={form.host}
+              onChange={(host) => setForm({ ...form, host })}
+              required
+            />
+            <div className="field-grid">
+              {protocol === 'ssh' && (
+                <EditableField label={t('用户')} value={form.user} onChange={(user) => setForm({ ...form, user })} />
+              )}
+              <EditableField
+                label={t('端口')}
+                value={`${form.port}`}
+                onChange={(port) => setForm({ ...form, port: Number(port) || (protocol === 'telnet' ? 23 : 22) })}
+              />
+            </div>
+          </>
+        )}
+        {protocol === 'serial' && (
+          <>
+            <label className="field">
+              <span>{t('串口')}</span>
+              <select
+                value={form.serialPort ?? ''}
+                onChange={(event) => setForm({ ...form, serialPort: event.target.value })}
+              >
+                <option value="">{t('选择串口')}</option>
+                {serialPorts.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="field-grid">
+              <EditableField
+                label={t('波特率')}
+                value={`${form.baudRate ?? 9600}`}
+                onChange={(baudRate) => setForm({ ...form, baudRate: Number(baudRate) || 9600 })}
+              />
+              <label className="field">
+                <span>{t('数据位')}</span>
+                <select
+                  value={`${form.dataBits ?? 8}`}
+                  onChange={(event) => setForm({ ...form, dataBits: Number(event.target.value) })}
+                >
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                </select>
+              </label>
+            </div>
+            <div className="field-grid">
+              <label className="field">
+                <span>{t('停止位')}</span>
+                <select
+                  value={`${form.stopBits ?? 1}`}
+                  onChange={(event) => setForm({ ...form, stopBits: Number(event.target.value) })}
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>{t('校验位')}</span>
+                <select
+                  value={form.parity ?? 'none'}
+                  onChange={(event) => setForm({ ...form, parity: event.target.value })}
+                >
+                  <option value="none">{t('无')}</option>
+                  <option value="odd">{t('奇校验')}</option>
+                  <option value="even">{t('偶校验')}</option>
+                </select>
+              </label>
+            </div>
+            <label className="field">
+              <span>{t('流控')}</span>
+              <select
+                value={form.flowControl ?? 'none'}
+                onChange={(event) => setForm({ ...form, flowControl: event.target.value })}
+              >
+                <option value="none">{t('无')}</option>
+                <option value="hardware">{t('硬件')}</option>
+                <option value="software">{t('软件')}</option>
+              </select>
+            </label>
+          </>
+        )}
+        {protocol === 'ssh' && (
+          <>
+            <EditableField label={t('分组')} value={form.group} onChange={(group) => setForm({ ...form, group })} />
+            <label className="field">
+              <span>{t('认证方式')}</span>
+              <select
+                value={form.auth}
+                onChange={(event) => setForm({
+                  ...form,
+                  auth: event.target.value as ServerProfile['auth'],
+                  password: '',
+                })}
+              >
+                <option value="Password">{t('密码认证')}</option>
+                <option value="Key">{t('SSH 私钥')}</option>
+                <option value="Agent">SSH Agent</option>
+              </select>
+            </label>
+            {form.auth === 'Key' && (
+              <label className="field">
+                <span>{t('私钥文件')}</span>
+                <div className="private-key-input-row">
+                  <input
+                    value={form.privateKeyPath ?? ''}
+                    onChange={(event) => setForm({ ...form, privateKeyPath: event.target.value })}
+                    placeholder="C:\\Users\\name\\.ssh\\id_ed25519"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    aria-label={t('选择私钥文件')}
+                    title={t('选择私钥文件')}
+                    onClick={() => {
+                      void invoke<string | null>('choose_ssh_private_key').then((privateKeyPath) => {
+                        if (privateKeyPath) setForm((current) => ({ ...current, privateKeyPath }))
+                      })
+                    }}
+                  >
+                    <FolderOpen size={15} />
+                  </button>
+                </div>
+              </label>
+            )}
+            {form.auth !== 'Agent' && (
+              <PasswordField
+                label={t(form.auth === 'Key' ? '私钥口令（可选）' : '密码')}
+                value={form.password ?? ''}
+                onChange={(password) => setForm({ ...form, password })}
+                placeholder={t(form.auth === 'Key' ? '未加密私钥可以留空' : '保存到系统凭据保险库')}
+              />
+            )}
+          </>
+        )}
+        {protocol !== 'ssh' && (
+          <EditableField label={t('分组')} value={form.group} onChange={(group) => setForm({ ...form, group })} />
+        )}
+        <label className="remote-desktop-profile-check">
+          <input
+            type="checkbox"
+            checked={Boolean(form.logEnabled)}
+            onChange={(event) => setForm({ ...form, logEnabled: event.target.checked })}
+          />
+          <span>{t('保存会话日志')}</span>
+        </label>
+        {form.logEnabled && (
           <label className="field">
-            <span>{t('私钥文件')}</span>
+            <span>{t('日志目录')}</span>
             <div className="private-key-input-row">
               <input
-                value={form.privateKeyPath ?? ''}
-                onChange={(event) => setForm({ ...form, privateKeyPath: event.target.value })}
-                placeholder="C:\\Users\\name\\.ssh\\id_ed25519"
+                value={form.logPath ?? ''}
+                onChange={(event) => setForm({ ...form, logPath: event.target.value })}
+                placeholder={t('留空默认保存到程序运行目录/logs')}
                 spellCheck={false}
               />
               <button
                 type="button"
-                aria-label={t('选择私钥文件')}
-                title={t('选择私钥文件')}
+                aria-label={t('选择日志目录')}
+                title={t('选择日志目录')}
                 onClick={() => {
-                  void invoke<string | null>('choose_ssh_private_key').then((privateKeyPath) => {
-                    if (privateKeyPath) setForm((current) => ({ ...current, privateKeyPath }))
+                  void invoke<string | null>('choose_log_directory').then((logPath) => {
+                    if (logPath) setForm((current) => ({ ...current, logPath }))
                   })
                 }}
               >
@@ -13779,14 +14015,6 @@ function ServerModal({
               </button>
             </div>
           </label>
-        )}
-        {form.auth !== 'Agent' && (
-          <PasswordField
-            label={t(form.auth === 'Key' ? '私钥口令（可选）' : '密码')}
-            value={form.password ?? ''}
-            onChange={(password) => setForm({ ...form, password })}
-            placeholder={t(form.auth === 'Key' ? '未加密私钥可以留空' : '保存到系统凭据保险库')}
-          />
         )}
         <div className="modal-actions">
           <button className="ghost-button" type="button" onClick={onCancel}>
@@ -16509,11 +16737,17 @@ function normalizeServerProfile(value: unknown): ServerProfile | null {
   if (!value || typeof value !== 'object') return null
 
   const source = value as Partial<ServerProfile>
+  const protocol = source.protocol === 'telnet' || source.protocol === 'serial' ? source.protocol : 'ssh'
   const host = typeof source.host === 'string' ? source.host.trim() : ''
   const user = typeof source.user === 'string' ? source.user.trim() : 'root'
-  const port = Number(source.port) || 22
+  const port = Number(source.port) || (protocol === 'telnet' ? 23 : 22)
 
-  if (!host || !user || port < 1 || port > 65535) return null
+  if (protocol === 'serial') {
+    const serialPort = typeof source.serialPort === 'string' ? source.serialPort.trim() : ''
+    if (!serialPort) return null
+  } else if (!host || !user || port < 1 || port > 65535) {
+    return null
+  }
 
   const name = typeof source.name === 'string' ? source.name.trim() : ''
   const group = typeof source.group === 'string' ? source.group.trim() : ''
@@ -16521,10 +16755,17 @@ function normalizeServerProfile(value: unknown): ServerProfile | null {
   const password = typeof source.password === 'string' ? source.password : ''
   const auth = source.auth === 'Key' || source.auth === 'Agent' ? source.auth : 'Password'
   const privateKeyPath = typeof source.privateKeyPath === 'string' ? source.privateKeyPath.trim() : ''
+  const baudRate = Number(source.baudRate) || 9600
+  const dataBits = Number(source.dataBits) || 8
+  const stopBits = Number(source.stopBits) || 1
+  const parity = typeof source.parity === 'string' ? source.parity : 'none'
+  const flowControl = typeof source.flowControl === 'string' ? source.flowControl : 'none'
+  const logEnabled = Boolean(source.logEnabled)
+  const logPath = typeof source.logPath === 'string' ? source.logPath.trim() : ''
 
   return {
     id,
-    name: name || host || '未命名服务器',
+    name: name || host || '未命名设备',
     host,
     user,
     port,
@@ -16532,6 +16773,15 @@ function normalizeServerProfile(value: unknown): ServerProfile | null {
     auth,
     password,
     privateKeyPath,
+    protocol,
+    serialPort: typeof source.serialPort === 'string' ? source.serialPort.trim() : '',
+    baudRate,
+    dataBits,
+    stopBits,
+    parity,
+    flowControl,
+    logEnabled,
+    logPath,
   }
 }
 
