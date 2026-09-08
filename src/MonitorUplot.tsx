@@ -163,20 +163,20 @@ function MonitorUplot({
             }
             const ts = self.data[0]?.[idx] as number | undefined
             const v1 = self.data[1]?.[idx] as number | undefined
-            if (ts == null || v1 == null) {
+            if (ts == null) {
               if (tip) tip.style.opacity = '0'
               return
             }
             const x = self.valToPos(ts, 'x', true)
-            const y = self.valToPos(v1, 'y', true)
+            const y = self.valToPos(v1 ?? 0, 'y', true)
             tipTime.textContent = formatClock(ts)
             if (isRate) {
               const v2 = self.data[2]?.[idx] as number | undefined
               tipVal.innerHTML =
-                `<span class="uplot-tip-row"><i style="background:${UP_COLOR}"></i>${label ?? '上传'} ${fmtRate(v1)}</span>` +
+                `<span class="uplot-tip-row"><i style="background:${UP_COLOR}"></i>${label ?? '上传'} ${fmtRate(v1 ?? 0)}</span>` +
                 `<span class="uplot-tip-row"><i style="background:${DOWN_COLOR}"></i>${label2 ?? '下载'} ${fmtRate(v2 ?? 0)}</span>`
             } else {
-              tipVal.innerHTML = `<span class="uplot-tip-row"><i style="background:${accent}"></i>${label ?? ''} ${v1.toFixed(1)}%</span>`
+              tipVal.innerHTML = `<span class="uplot-tip-row"><i style="background:${accent}"></i>${label ?? ''} ${(v1 ?? 0).toFixed(1)}%</span>`
             }
             tip.style.opacity = '1'
             const tipW = tip.offsetWidth
