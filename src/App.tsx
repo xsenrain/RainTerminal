@@ -2849,7 +2849,7 @@ function App() {
             )}
           </AnimatePresence>
         </aside>
-        <div style={{ display: mainView === 'inspect' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+        <div style={{ display: mainView === 'inspect' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
           <InspectWorkspace
             inspectDevices={inspectDevices}
             onAddInspectDevice={addInspectDevice}
@@ -2871,7 +2871,7 @@ function App() {
             setInspectProgress={setInspectProgress}
           />
         </div>
-        <div style={{ display: mainView === 'tools' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+        <div style={{ display: mainView === 'tools' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
           <InspectToolbox onNotify={(message) => setToast(message)} />
         </div>
         {mainView !== 'inspect' && mainView !== 'tools' && (
@@ -11073,6 +11073,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [summary, setSummary] = useState<Record<string, PingSummary>>({})
   const [detail, setDetail] = useState<Record<string, { hostname: string; rows: PingBatchRow[] }>>({})
   const [selectedIp, setSelectedIp] = useState<string | null>(null)
+  const [rounds, setRounds] = useState(0)
   const [errors, setErrors] = useState<string[]>([])
   const [finished, setFinished] = useState(false)
 
@@ -11185,6 +11186,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
     setSummary({})
     setDetail({})
     setSelectedIp(null)
+    setRounds(0)
     runningRef.current = true
     if (!monitor) {
       await runOneRound(hosts, n)
@@ -11196,6 +11198,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
     // 持续监控：以轮开始为基准固定 1 秒周期（探测耗时从等待中扣除），不通主机也不会把间隔拖成 2 秒
     const tick = async () => {
       if (!runningRef.current) return
+      setRounds((r) => r + 1)
       const roundStart = Date.now()
       await runOneRound(hosts, 1)
       if (!runningRef.current) return
@@ -11213,7 +11216,6 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const avgMs = (row: PingSummary) => (row.ok > 0 ? (row.rttSum / row.ok).toFixed(1) : '-')
 
   const summaryIps = Object.keys(summary).sort()
-  const totalPing = summaryIps.reduce((acc, ip) => acc + summary[ip].ok + summary[ip].fail, 0)
 
   return (
     <div className="inspect-toolbox-card">
@@ -11255,7 +11257,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
           </label>
           <button className="utility-primary-button compact" type="button" onClick={() => (running ? stopPing() : void startPing())}>
             <RefreshCw size={13} />
-            {running ? `${t('停止')} ${totalPing}` : t('开始探测')}
+            {running ? `${t('停止')} ${rounds}` : t('开始探测')}
           </button>
         </div>
       </div>
