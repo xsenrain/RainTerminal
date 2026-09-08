@@ -64,7 +64,15 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
       padding: [12, 10, 6, 6],
       scales: {
         x: { time: true },
-        y: { range: [0, 100] },
+        y: {
+          range: (_self, dataMin, dataMax) => {
+            if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMax <= dataMin) return [0, 100]
+            const pad = Math.max(2, (dataMax - dataMin) * 0.2)
+            const lo = Math.max(0, dataMin - pad)
+            const hi = Math.min(100, dataMax + pad)
+            return hi - lo < 8 ? [Math.max(0, lo - 4), Math.min(100, hi + 4)] : [lo, hi]
+          },
+        },
       },
       series: [
         {},
@@ -83,6 +91,12 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
           ticks: { stroke: theme.border },
           size: 28,
           font: '11px "Segoe UI Variable", "Inter", system-ui, sans-serif',
+          values: (_self, ticks) => ticks.map((sec) => {
+            const d = new Date(sec * 1000)
+            const hh = String(d.getHours()).padStart(2, '0')
+            const mm = String(d.getMinutes()).padStart(2, '0')
+            return `${hh}:${mm}`
+          }),
         },
         {
           stroke: theme.textTer,
@@ -164,6 +178,10 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
   useEffect(() => {
     const plot = plotRef.current
     if (!plot || values.length < 2) return
+    const wrap = wrapRef.current
+    if (wrap && wrap.clientWidth > 0 && plot.width !== wrap.clientWidth) {
+      plot.setSize({ width: wrap.clientWidth, height: 216 })
+    }
     const n = values.length
     const now = Date.now()
     const t0 = now - (n - 1) * SAMPLE_MS

@@ -791,3 +791,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - ResizeObserver 自适应宽度，高度 216px 固定
 - 删除 MonitorSparkline 大图 SVG（MiniSpark 卡片小图保留）
 - 验证：npm build 通过（uplot 新增依赖 ~40KB）
+
+---
+
+## 2026-09-08 · 监控大图 v2：时间 24 小时制 + Y 轴自适应 + 20 分钟窗口
+
+- 时间轴 12 小时制(am/pm) → 24 小时制 HH:MM（消除 "pm" 字样）
+- Y 轴固定 0-100% → 数据自适应范围（±20% padding，夹在 0-100），CPU 30% 时曲线铺满不再上方空一大块
+- 历史采样 750 → 600 点（2 秒/点 × 20 分钟，用户要求）
+- 数据更新时同步 canvas 宽度（防初始宽度卡死导致右侧空块）
+- 验证：npm build 通过

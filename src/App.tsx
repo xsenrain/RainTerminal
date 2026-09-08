@@ -9111,15 +9111,15 @@ function MachineMonitorWidget({
           lastUpValueRef.current = upValue
           lastDownValueRef.current = downValue
           setHistory((current) => ({
-            cpu: [...current.cpu, nextStats.cpu_usage].slice(-750),
-            memory: [...current.memory, memoryPercent].slice(-750),
-            disk: [...current.disk, diskPercent].slice(-750),
-            network: [...current.network, Math.max(upValue, downValue)].slice(-750),
-            swap: [...current.swap, swapPercent].slice(-750),
-            networkUp: [...current.networkUp, upValue].slice(-750),
-            networkDown: [...current.networkDown, downValue].slice(-750),
-            tcp: [...current.tcp, nextStats.tcp_connections ?? 0].slice(-750),
-            udp: [...current.udp, nextStats.udp_connections ?? 0].slice(-750),
+            cpu: [...current.cpu, nextStats.cpu_usage].slice(-600),
+            memory: [...current.memory, memoryPercent].slice(-600),
+            disk: [...current.disk, diskPercent].slice(-600),
+            network: [...current.network, Math.max(upValue, downValue)].slice(-600),
+            swap: [...current.swap, swapPercent].slice(-600),
+            networkUp: [...current.networkUp, upValue].slice(-600),
+            networkDown: [...current.networkDown, downValue].slice(-600),
+            tcp: [...current.tcp, nextStats.tcp_connections ?? 0].slice(-600),
+            udp: [...current.udp, nextStats.udp_connections ?? 0].slice(-600),
           }))
         })
       })
