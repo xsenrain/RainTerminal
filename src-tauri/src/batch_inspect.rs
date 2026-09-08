@@ -1138,7 +1138,7 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（ICMP ping 存活 + TCP 端口并行探测） ====================
+// ==================== 网段发现（ICMP ping 存活 + TCP 端口并行，10 秒循环窗口） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
@@ -1276,11 +1276,11 @@ where
 }
 
 /// 扫描 [start_ip, end_ip] 范围内设备（async + spawn_blocking，不阻塞主线程）：
-/// 每个 IP 一个线程全并行：
-/// 1. ICMP ping 判网络连通（300ms，与 ping.exe 同底层）
-/// 2. 并行 TCP 探测全部目标端口（7 固定 + 自定义，200ms）
-/// ping 通 或 有任一端口开放 → 判定设备在线，立即上屏（inspect-scan-alive + inspect-scan-port）。
-/// 端口全关的设备也会显示（端口列 ✗），与 MobaXterm 行为一致。
+/// 每个 IP 一个线程全并行，在 10 秒窗口内循环检测：
+/// - 每轮并行执行 ICMP ping（300ms）+ TCP 探测全部目标端口（7 固定 + 自定义，200ms）
+/// - 一轮内 ping 通 或 有端口开放 → 立即判定在线并上屏（inspect-scan-alive + inspect-scan-port）
+/// - 10 秒后仍未通 → 放弃该 IP（判不在线），整体扫描最长 10 秒自动停止
+/// 进度：每台设备判定结束推送 inspect-scan-progress（scanned/total）。
 #[tauri::command]
 pub async fn scan_inspect_network(
     app: tauri::AppHandle,
@@ -1312,6 +1312,7 @@ pub async fn scan_inspect_network(
         let processed = Arc::new(AtomicUsize::new(0));
         let total = count;
         let batch = if count <= 512 { count } else { 256 };
+        let scan_window = Duration::from_secs(10);
 
         run_parallel_batches(count, batch, {
             let all_ports = all_ports.clone();
@@ -1320,11 +1321,21 @@ pub async fn scan_inspect_network(
             let app = app.clone();
             move |i| {
                 let ip = std::net::Ipv4Addr::from(start_u + i as u32);
-                // ping 与 TCP 端口探测并行推进，单 IP 最坏约 300ms
-                let ping_handle = std::thread::spawn(move || ping_host(ip, 300));
-                let open = probe_ports_parallel(ip, &all_ports, Duration::from_millis(200));
-                let up = ping_handle.join().unwrap_or(false);
-                if up || !open.is_empty() {
+                let deadline = std::time::Instant::now() + scan_window;
+                let mut up = false;
+                let mut open: Vec<u16> = Vec::new();
+                // 10 秒窗口内循环检测，通了立即跳出
+                while std::time::Instant::now() < deadline {
+                    let ping_handle = std::thread::spawn(move || ping_host(ip, 300));
+                    open = probe_ports_parallel(ip, &all_ports, Duration::from_millis(200));
+                    let ping_up = ping_handle.join().unwrap_or(false);
+                    if ping_up || !open.is_empty() {
+                        up = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+                if up {
                     let name = reverse_hostname(ip);
                     hits.lock().unwrap().push(InspectScanHit {
                         ip: ip.to_string(),

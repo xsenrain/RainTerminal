@@ -10621,7 +10621,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
           <div className="inspect-toolbox-card-head">
             <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
-            <span>{t('探测 IP 范围内开放的常用服务端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS），快速识别在线设备及其开放端口，最多 8192 个 IP')}</span>
+            <span>{t('探测 IP 范围内在线设备及其开放端口（SSH/RDP/VNC/FTP/Telnet/HTTP/HTTPS + 自定义），在线即上屏，单次扫描最长 10 秒自动停止')}</span>
           </div>
           <div className="inspect-discover-row">
             <span className="inspect-discover-label">{t('IP 范围')}</span>
