@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "RainTerminal",
-  "version": "1.1.0-dev",
+  "version": "1.0.2",
   "identifier": "com.rain.terminal",
   "build": {
     "frontendDist": "../dist",
@@ -28,13 +28,17 @@
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPLOCALDATA/background/**"]
+        "scope": [
+          "$APPLOCALDATA/background/**"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

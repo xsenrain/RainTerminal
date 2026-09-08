@@ -692,3 +692,10 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 右侧控件（次数/超时/持续监控/开始探测）收进 300px 带背景面板，视觉成组不再孤零零挤在右侧
 - 次数与超时(ms) 并排两列 grid，持续监控与开始按钮通栏
 - 验证：npm run build 通过
+
+---
+
+## 2026-09-08 · 发布 v1.0.2 正式版
+
+- 版本号由 1.1.0-dev 调整为 1.0.2（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
+- 发布正式版安装包（NSIS exe）
