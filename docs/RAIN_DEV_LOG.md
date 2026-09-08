@@ -1136,7 +1136,26 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 方案：后端写通道（ssh/telnet/serial_session_write）调用 session_log_note_input
 - 标记该会话进入"输入行"模式（含最近输入时刻）
 - 读循环：输入行内做退格/回车消化（输错重输只留净命令），回车即结束输入行
-- 非输入行：服务端输出原样全部记录（、 等均保留，仅清 ANSI 控制序列）
+- 非输入行：服务端输出原样全部记录（
+、 等均保留，仅清 ANSI 控制序列）
 - 输入行 3 秒无新输入自动结束，残留原样落盘
 - 5 个单元测试：输入退格重输/服务端原样/CRLF跨块/中文退格/超时复位，全过
 - 验证：cargo test session_log 5 passed + cargo check 零警告
+
+---
+
+## 2026-09-08 · Serial日志链路审计 + 连接失败日志泄漏修复
+
+审计结论（Serial 日志链路完整）：
+- 连接开启：serial_connect → session_log_open（logEnabled/logPath）
+- 读循环写：无条件 session_log_write_bytes（registry 机制，动态开启可写）
+- 输入标记：serial_session_write → session_log_note_input（仅输入行消化）
+- 会话结束：正常关闭/主动断开均 session_log_close
+- 前端入口：Serial/Telnet/SSH 共用 ssh-terminal widget，更多菜单"保存会话日志"通用
+
+修复（三个协议连接失败时日志条目泄漏）：
+- run 函数内 ? 提前返回（DNS解析失败/TCP连接失败/串口打开失败）不 close 日志条目
+- 三个协议 connect 线程 Err 分支统一兜底 session_log_close
+- SSH 认证失败/通道失败同样覆盖
+- 顺带修复改名遗留：remote_download_staging_path 测试断言 .xundu.part → .rain.part
+- 验证：cargo test 40 passed + cargo check 零警告

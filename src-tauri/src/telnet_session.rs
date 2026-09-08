@@ -265,6 +265,7 @@ pub async fn telnet_connect(
             request.cols,
             request.rows,
         ) {
+            session_log_close(&request.session_id);
             let _ = app_clone.emit(
                 "telnet:error",
                 TelnetStatusPayload {
@@ -286,10 +287,13 @@ fn telnet_session_run(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let addrs = (host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|e| format!("无法解析主机 {host}:{port} - {e}"))?
-        .collect::<Vec<_>>();
+    let addrs = match (host.as_str(), port).to_socket_addrs() {
+        Ok(addrs) => addrs.collect::<Vec<_>>(),
+        Err(e) => {
+            session_log_close(&session_id);
+            return Err(format!("无法解析主机 {host}:{port} - {e}"));
+        }
+    };
     let mut stream = None;
     let mut last_error = String::new();
     for addr in &addrs {
@@ -301,13 +305,17 @@ fn telnet_session_run(
             Err(e) => last_error = format!("连接 {addr} 失败: {e}"),
         }
     }
-    let mut stream = stream.ok_or_else(|| {
-        if last_error.is_empty() {
-            format!("连接 {host}:{port} 失败")
-        } else {
-            last_error
+    let mut stream = match stream {
+        Some(s) => s,
+        None => {
+            session_log_close(&session_id);
+            return Err(if last_error.is_empty() {
+                format!("连接 {host}:{port} 失败")
+            } else {
+                last_error
+            });
         }
-    })?;
+    };
     println!("[telnet] tcp connected session={session_id} host={host}:{port}");
     let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));

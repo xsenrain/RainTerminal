@@ -3014,6 +3014,7 @@ fn ssh_connect(
             cols,
             rows,
         ) {
+            session_log::session_log_close(&session_id);
             let _ = app.emit(
                 "ssh:error",
                 SshStatusPayload {
@@ -7185,7 +7186,7 @@ mod tests {
         let second = remote_download_staging_path(&destination);
 
         assert_eq!(first, second);
-        assert_eq!(first.file_name().unwrap(), ".release.zip.xundu.part");
+        assert_eq!(first.file_name().unwrap(), ".release.zip.rain.part");
         assert_ne!(first, destination);
     }
 

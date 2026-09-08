@@ -188,6 +188,7 @@ pub async fn serial_connect(
             request.parity,
             request.flow_control,
         ) {
+            session_log_close(&request.session_id);
             let _ = app_clone.emit(
                 "serial:error",
                 SerialStatusPayload {
@@ -218,9 +219,13 @@ fn serial_session_run(
         .parity(map_parity(&parity)?)
         .flow_control(map_flow_control(&flow_control)?)
         .timeout(READ_TIMEOUT);
-    let mut port = builder
-        .open()
-        .map_err(|e| format!("打开串口 {port_name} 失败: {e}"))?;
+    let mut port = match builder.open() {
+        Ok(port) => port,
+        Err(e) => {
+            session_log_close(&session_id);
+            return Err(format!("打开串口 {port_name} 失败: {e}"));
+        }
+    };
 
     let writer = Arc::new(Mutex::new(port.try_clone().map_err(|e| format!("串口克隆失败: {e}"))?));
     let alive = Arc::new(AtomicBool::new(true));
