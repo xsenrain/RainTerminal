@@ -1998,6 +1998,20 @@ async fn choose_log_directory() -> Result<Option<String>, String> {
     .await
 }
 
+/// 连接后按需开启会话日志（不依赖设备配置），返回实际日志文件路径
+#[tauri::command]
+fn session_log_start(session_id: String, dir: Option<String>, name: String) -> Result<Option<String>, String> {
+    session_log::session_log_open(&session_id, true, dir.as_deref(), &name)?;
+    Ok(session_log::session_log_path(&session_id).map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// 连接后按需停止会话日志
+#[tauri::command]
+fn session_log_stop(session_id: String) -> Result<(), String> {
+    session_log::session_log_close(&session_id);
+    Ok(())
+}
+
 #[tauri::command]
 async fn choose_file_upload_sources() -> Result<Vec<String>, String> {
     run_blocking(move || {
@@ -7428,6 +7442,8 @@ pub fn run() {
             choose_file_download_destination,
             choose_file_upload_sources,
             choose_log_directory,
+            session_log_start,
+            session_log_stop,
             choose_ssh_private_key,
             choose_app_background,
             clear_app_background,

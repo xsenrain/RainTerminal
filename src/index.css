@@ -1994,9 +1994,25 @@ html[data-appearance='dark'] .terminal-cli-launcher[data-monochrome='true'] img 
   transform: scale(0.94);
 }
 
+.widget-titlebar .widget-action-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .widget-titlebar .widget-action-button.danger:hover {
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+.widget-titlebar .widget-action-button.active {
+  background: rgba(47, 111, 237, 0.14);
+  color: #2f6fed;
+}
+
+.widget-titlebar .widget-action-button.active:hover {
+  background: rgba(47, 111, 237, 0.22);
+  color: #2f6fed;
 }
 
 .widget-icon {

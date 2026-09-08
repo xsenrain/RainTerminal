@@ -123,6 +123,7 @@ import {
   Star,
   Sun,
   Terminal,
+  FileText,
   Trash2,
   Upload,
   Network,
@@ -2784,7 +2785,7 @@ function App() {
         onOpenRemoteDesktop={openRemoteDesktopProfile}
         appearance={appearance}
         onAppearanceChange={setAppearance}
-        onAdd={() => setServerModal(blankDraft)}
+        onAdd={() => setServerModal({ ...blankDraft, protocol: 'ssh' })}
         onSettings={() => setSettingsOpen(true)}
         onTransfers={() => setTransferManagerOpen(true)}
         onPalette={() => setPaletteOpen(true)}
@@ -2832,7 +2833,7 @@ function App() {
                       onSelect={selectServer}
                       onOpenServer={openServerRunPanel}
                       onServerContextMenu={openServerContextMenu}
-                      onAdd={() => setServerModal(blankDraft)}
+                      onAdd={(protocol) => setServerModal({ ...blankDraft, protocol })}
                       onAddRemoteDesktop={() => setRemoteDesktopModal(blankRemoteDesktopDraft)}
                       onOpenRemoteDesktop={openRemoteDesktopProfile}
                       onRemoteDesktopContextMenu={openRemoteDesktopProfileContextMenu}
@@ -3156,7 +3157,7 @@ function GlobalConnectionSearch({
         <input
           ref={inputRef}
           role="combobox"
-          aria-label={t('搜索 SSH 服务器和远程桌面')}
+          aria-label={t('搜索设备和远程桌面')}
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls="global-search-results"
@@ -3189,7 +3190,7 @@ function GlobalConnectionSearch({
             }
             if (event.key === 'Tab') setOpen(false)
           }}
-          placeholder={t('搜索 SSH 服务器和远程桌面')}
+          placeholder={t('搜索设备和远程桌面')}
         />
         {query && (
           <button
@@ -3709,7 +3710,7 @@ function SourceList({
   onSelect: (id: string) => void
   onOpenServer: (server: ServerProfile) => void
   onServerContextMenu: (event: MouseEvent<HTMLElement>, server: ServerProfile) => void
-  onAdd: () => void
+  onAdd: (protocol: ServerProtocol) => void
   onAddRemoteDesktop: () => void
   onOpenRemoteDesktop: (profile: RemoteDesktopProfile) => void
   onRemoteDesktopContextMenu: (event: MouseEvent<HTMLElement>, profile: RemoteDesktopProfile) => void
@@ -3719,17 +3720,18 @@ function SourceList({
   onLaunchOptionsChange: (options: { files: boolean; monitor: boolean; processes: boolean }) => void
 }) {
   const { t } = useAppLocale()
-  return (
-    <aside className="source-list server-source-list">
+  function renderServerSection(titleKey: string, protocol: ServerProtocol, emptyText: string, addLabel: string) {
+    const filtered = servers.filter((server) => (server.protocol ?? 'ssh') === protocol)
+    return (
       <div className="source-section">
         <div className="source-heading">
-          <span>{t('SSH 服务器')}</span>
-          <button className="small-control" type="button" aria-label={t('添加服务器')} onClick={onAdd}>
+          <span>{t(titleKey)}</span>
+          <button className="small-control" type="button" aria-label={t(addLabel)} title={t(addLabel)} onClick={() => onAdd(protocol)}>
             <Plus size={16} />
           </button>
         </div>
         <div className="server-list">
-          {servers.map((server) => (
+          {filtered.map((server) => (
               <button
                 key={server.id}
                 className={`server-item ${server.id === selectedServerId ? 'active' : ''}`}
@@ -3742,37 +3744,43 @@ function SourceList({
                 <span className="server-main">
                   <span className="server-name">
                     {server.name}
-                    {server.protocol && server.protocol !== 'ssh' && (
-                      <span className={`server-protocol-badge protocol-${server.protocol}`}>
-                        {server.protocol === 'telnet' ? 'Telnet' : 'Serial'}
+                    {protocol !== 'ssh' && (
+                      <span className={`server-protocol-badge protocol-${protocol}`}>
+                        {protocol === 'telnet' ? 'Telnet' : 'Serial'}
                       </span>
                     )}
                   </span>
                   <span className="server-host">
-                    {server.protocol === 'serial'
+                    {protocol === 'serial'
                       ? (server.serialPort ?? '')
-                      : server.protocol === 'telnet'
+                      : protocol === 'telnet'
                         ? server.host
                         : `${server.user}@${server.host}`}
                   </span>
                 </span>
                 <span className="server-port">
-                  {server.protocol === 'serial' ? (server.baudRate ?? 9600) : server.port}
+                  {protocol === 'serial' ? (server.baudRate ?? 9600) : server.port}
                 </span>
               </button>
             ))}
-          {servers.length === 0 && (
-            <div className="empty-panel">
-              <strong>{t('还没有服务器')}</strong>
-              <span>{t('添加 SSH 配置后，可以在本地终端和远程会话之间切换。')}</span>
-              <button className="ghost-button compact" type="button" onClick={onAdd}>
+          {filtered.length === 0 && (
+            <div className="empty-panel compact-empty-panel">
+              <span>{t(emptyText)}</span>
+              <button className="ghost-button compact" type="button" onClick={() => onAdd(protocol)}>
                 <Plus size={14} />
-                {t('添加服务器')}
+                {t(addLabel)}
               </button>
             </div>
           )}
         </div>
       </div>
+    )
+  }
+  return (
+    <aside className="source-list server-source-list">
+      {renderServerSection('SSH 服务器', 'ssh', '还没有 SSH 服务器', '添加 SSH 服务器')}
+      {renderServerSection('Telnet 设备', 'telnet', '还没有 Telnet 设备', '添加 Telnet 设备')}
+      {renderServerSection('串口设备', 'serial', '还没有串口设备', '添加串口设备')}
       <div className="source-section remote-desktop-source-section">
         <div className="source-heading">
           <span>{t('远程桌面')}</span>
@@ -5611,6 +5619,7 @@ export function LegacyWorkbench({
                 return (
               <FloatingWidget
                 widget={widget}
+                server={widgetServer}
                 zIndex={widget.id === workspace.focusedWidgetId ? 20 : 10 + index}
                 focused={widgetFocused}
                 onFocus={() => onFocusWidget(widget.id)}
@@ -5671,6 +5680,7 @@ export function LegacyWorkbench({
 
 function FloatingWidget({
   widget,
+  server,
   zIndex,
   focused,
   children,
@@ -5685,6 +5695,7 @@ function FloatingWidget({
   onMore,
 }: {
   widget: WorkbenchWidget
+  server?: ServerProfile
   zIndex: number
   focused: boolean
   children: ReactNode
@@ -5874,6 +5885,12 @@ function FloatingWidget({
             <button className="widget-action-button" type="button" onPointerDown={stopTitlebarActionPointer} onClick={onMore} aria-label="更多操作">
               <MoreVertical size={12} />
             </button>
+            {widget.type === 'ssh-terminal' && (
+              <RemoteTerminalLogButton
+                sessionId={getRemoteWidgetSessionId(widget)}
+                server={server}
+              />
+            )}
             {widget.type === 'ssh-terminal' && (
               <button className="widget-action-button" type="button" onPointerDown={stopTitlebarActionPointer} onClick={onRefresh} aria-label="重连终端" title="重连终端">
                 <RefreshCw size={12} />
@@ -6217,6 +6234,75 @@ function LocalTerminalWidget({
   )
 }
 
+interface RemoteTerminalLogState {
+  recording: boolean
+  path: string
+}
+
+const remoteTerminalLogStore = {
+  map: new Map<string, RemoteTerminalLogState>(),
+  listeners: new Set<() => void>(),
+  get(sessionId: string): RemoteTerminalLogState {
+    return this.map.get(sessionId) ?? { recording: false, path: '' }
+  },
+  set(sessionId: string, state: RemoteTerminalLogState) {
+    this.map.set(sessionId, state)
+    this.emit()
+  },
+  emit() {
+    this.listeners.forEach((listener) => listener())
+  },
+  subscribe(listener: () => void) {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  },
+}
+
+function RemoteTerminalLogButton({ sessionId, server }: { sessionId: string; server?: ServerProfile }) {
+  const { t } = useAppLocale()
+  const state = useSyncExternalStore(
+    (listener) => remoteTerminalLogStore.subscribe(listener),
+    () => remoteTerminalLogStore.get(sessionId),
+    () => remoteTerminalLogStore.get(sessionId),
+  )
+  const connected = remoteTerminalConnectedSessions.has(sessionId)
+  const busyRef = useRef(false)
+  function toggleSessionLog() {
+    if (busyRef.current) return
+    busyRef.current = true
+    if (state.recording) {
+      void invoke('session_log_stop', { sessionId })
+        .then(() => remoteTerminalLogStore.set(sessionId, { recording: false, path: '' }))
+        .catch((error) => console.error('停止日志失败', error))
+        .finally(() => {
+          busyRef.current = false
+        })
+    } else {
+      void invoke<string | null>('session_log_start', { sessionId, dir: null, name: server?.name ?? 'session' })
+        .then((path) => remoteTerminalLogStore.set(sessionId, { recording: true, path: path ?? '' }))
+        .catch((error) => console.error('开启日志失败', error))
+        .finally(() => {
+          busyRef.current = false
+        })
+    }
+  }
+  return (
+    <button
+      className={`widget-action-button ${state.recording ? 'active' : ''}`}
+      type="button"
+      disabled={!connected}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={toggleSessionLog}
+      aria-label={t('保存会话日志')}
+      title={connected ? (state.recording ? `正在记录：${state.path}` : t('保存会话日志')) : t('连接后可用')}
+    >
+      <FileText size={12} />
+    </button>
+  )
+}
+
 function RemoteTerminalWidget({
   widgetId,
   title,
@@ -6261,8 +6347,8 @@ function RemoteTerminalWidget({
         port: targetServer.port,
         cols: size.cols,
         rows: size.rows,
-        logEnabled: Boolean(targetServer.logEnabled),
-        logPath: targetServer.logPath || null,
+        logEnabled: false,
+        logPath: null,
         name: targetServer.name,
       })
     }
@@ -6275,8 +6361,8 @@ function RemoteTerminalWidget({
         stopBits: targetServer.stopBits ?? 1,
         parity: targetServer.parity ?? 'none',
         flowControl: targetServer.flowControl ?? 'none',
-        logEnabled: Boolean(targetServer.logEnabled),
-        logPath: targetServer.logPath || null,
+        logEnabled: false,
+        logPath: null,
         name: targetServer.name,
       })
     }
@@ -6290,8 +6376,8 @@ function RemoteTerminalWidget({
       port: targetServer.port,
       cols: size.cols,
       rows: size.rows,
-      logEnabled: Boolean(targetServer.logEnabled),
-      logPath: targetServer.logPath || null,
+      logEnabled: false,
+      logPath: null,
       logName: targetServer.name,
     })
   }
@@ -6839,6 +6925,7 @@ function RemoteTerminalWidget({
         diag('ssh-event', `connected server=${server?.host ?? 'unknown'} session=${sessionIdRef.current}`)
         remoteTerminalConnectingSessions.delete(sessionIdRef.current)
         remoteTerminalConnectedSessions.add(sessionIdRef.current)
+        remoteTerminalLogStore.emit()
         clearReconnectTimer()
         sshStartedRef.current = true
         reconnectAwaitingDataRef.current = reconnectAttemptRef.current > 0
@@ -6889,6 +6976,7 @@ function RemoteTerminalWidget({
         if (/authentication|password auth|permission denied/i.test(message)) reconnectBlockedRef.current = true
         remoteTerminalConnectingSessions.delete(sessionIdRef.current)
         remoteTerminalConnectedSessions.delete(sessionIdRef.current)
+        remoteTerminalLogStore.emit()
         setHealth((current) => current ? { ...current, connected: false } : null)
         inputUnavailableNoticeRef.current = true
         appendRemoteTerminalOutput(`\r\n${message}\r\n`)
@@ -6900,6 +6988,7 @@ function RemoteTerminalWidget({
         diag('ssh-event', `closed server=${server?.host ?? 'unknown'} intentional=${intentionalCloseRef.current}`)
         remoteTerminalConnectingSessions.delete(sessionIdRef.current)
         remoteTerminalConnectedSessions.delete(sessionIdRef.current)
+        remoteTerminalLogStore.emit()
         sshStartedRef.current = false
         setHealth((current) => current ? { ...current, connected: false } : null)
         inputUnavailableNoticeRef.current = true
@@ -13982,39 +14071,6 @@ function ServerModal({
         )}
         {protocol !== 'ssh' && (
           <EditableField label={t('分组')} value={form.group} onChange={(group) => setForm({ ...form, group })} />
-        )}
-        <label className="remote-desktop-profile-check">
-          <input
-            type="checkbox"
-            checked={Boolean(form.logEnabled)}
-            onChange={(event) => setForm({ ...form, logEnabled: event.target.checked })}
-          />
-          <span>{t('保存会话日志')}</span>
-        </label>
-        {form.logEnabled && (
-          <label className="field">
-            <span>{t('日志目录')}</span>
-            <div className="private-key-input-row">
-              <input
-                value={form.logPath ?? ''}
-                onChange={(event) => setForm({ ...form, logPath: event.target.value })}
-                placeholder={t('留空默认保存到程序运行目录/logs')}
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                aria-label={t('选择日志目录')}
-                title={t('选择日志目录')}
-                onClick={() => {
-                  void invoke<string | null>('choose_log_directory').then((logPath) => {
-                    if (logPath) setForm((current) => ({ ...current, logPath }))
-                  })
-                }}
-              >
-                <FolderOpen size={15} />
-              </button>
-            </div>
-          </label>
         )}
         <div className="modal-actions">
           <button className="ghost-button" type="button" onClick={onCancel}>
