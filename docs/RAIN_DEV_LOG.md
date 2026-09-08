@@ -753,3 +753,18 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 保留顶部指标切换 + 大图（含当前值/最值/刻度）
 - history 扩展：swap/networkUp/networkDown/tcp/udp 各 60 点
 - 验证：npm build + cargo check + cargo test(2 passed)
+
+---
+
+## 2026-09-08 · 监控面板 v3 修复与美化（用户反馈）
+
+- 修复网络速率显示 "undefined"：formatRate 将 MB 值当字节导致 index=-1，重写为 formatRateMB（B/KB/MB/GB/s 分级）
+- 删除连接数卡（用户明确不需要）
+- 大图重做：
+  - readout 大数字移出图表，改为图表上方头部行（指标名+大数值+详情+近N分钟）
+  - 图表纯曲线全幅展示，网格/标签/文字全部改用主题 CSS 变量（深色/浅色皮肤自适应）
+  - 悬停交互：垂直虚线 + 圆点 + tooltip（该点数值 + 时间 HH:MM:SS，2 秒/点）
+  - 底部时间轴：-2:00 → 现在
+  - 面积渐变填充（linearGradient），曲线更精致
+- 卡片背景主题化（var(--surface-1)）
+- 验证：npm build 通过

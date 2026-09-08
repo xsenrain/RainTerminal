@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Fragment, memo, Profiler, startTransition, useSyncExternalStore } from 'react'
 import { useDeferredValue } from 'react'
 import { createContext, useContext } from 'react'
@@ -9192,12 +9192,16 @@ function MachineMonitorWidget({
           </button>
         ))}
       </div>
+      <div className="monitor-chart-head">
+        <div className="mch-metric">
+          <span className="mch-label">{activeCard.label}</span>
+          <strong className="mch-value">{activeCard.value}</strong>
+        </div>
+        <span className="mch-detail">{activeCard.detail}</span>
+        <span className="mch-range">{t('近')} {Math.round(((history[metric].length - 1) * 2) / 60 * 10) / 10} {t('分钟')}</span>
+      </div>
       <div className="monitor-chart">
         <MonitorSparkline values={history[metric]} />
-        <div className="monitor-readout">
-          <strong>{activeCard.value}</strong>
-          <span>{activeCard.detail}</span>
-        </div>
       </div>
       {stats && (
         <div className="monitor-overview">
@@ -9236,22 +9240,14 @@ function MachineMonitorWidget({
           <div className="monitor-net-card">
             <div className="mrc-top">
               <span className="mrc-title">网络</span>
-              <span className="mrc-value net-rate">↑ {formatRate(lastUpValueRef.current)} · ↓ {formatRate(lastDownValueRef.current)}</span>
+              <span className="mrc-value net-rate">↑ {formatRateMB(lastUpValueRef.current)} · ↓ {formatRateMB(lastDownValueRef.current)}</span>
             </div>
-            <div className="mrc-sub">网卡峰值 {formatRate(peakOf(history.network))} · 均值 {formatRate(avgOf(history.network))}</div>
+            <div className="mrc-sub">网卡峰值 {formatRateMB(peakOf(history.network))} · 均值 {formatRateMB(avgOf(history.network))}</div>
             <MiniDualSpark up={history.networkUp} down={history.networkDown} />
             <div className="mrc-stats">
               <span>已发送 {formatBytes(stats.network_transmitted)}</span>
               <span>已接收 {formatBytes(stats.network_received)}</span>
             </div>
-          </div>
-          <div className="monitor-conn-card">
-            <div className="mrc-top">
-              <span className="mrc-title">连接数</span>
-              <span className="mrc-value">{(stats.tcp_connections ?? 0) + (stats.udp_connections ?? 0)} 套接字</span>
-            </div>
-            <div className="mrc-sub">TCP {(stats.tcp_connections ?? 0)} · UDP {(stats.udp_connections ?? 0)}</div>
-            <MiniDualSpark up={history.tcp} down={history.udp} labels={['TCP', 'UDP']} />
           </div>
         </div>
       )}
@@ -16276,13 +16272,15 @@ function smoothPath(pts: { x: number; y: number }[]) {
 
 function MonitorSparkline({ values }: { values: number[] }) {
   const { t } = useAppLocale()
+  const gradientId = useId().replace(/:/g, '')
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const safeValues = values.length > 1 ? values : [0, values[0] ?? 0]
-  const width = 220
-  const height = 96
-  const padL = 24
-  const padR = 8
-  const padT = 8
-  const padB = 12
+  const width = 260
+  const height = 120
+  const padL = 30
+  const padR = 12
+  const padT = 12
+  const padB = 20
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const pts = safeValues.map((value, index) => {
@@ -16303,39 +16301,79 @@ function MonitorSparkline({ values }: { values: number[] }) {
   }
   const isExtreme = (p: { x: number; y: number; v: number }) => p === maxP || p === minP
   const gridValues = [0, 25, 50, 75, 100]
+  const hoverPt = hoverIndex != null ? pts[Math.max(0, Math.min(pts.length - 1, hoverIndex))] : null
+  const hoverTime = hoverIndex != null
+    ? new Date(Date.now() - (safeValues.length - 1 - hoverIndex) * 2000)
+    : null
+  const fmtClock = (d: Date | null) => (
+    d
+      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+      : ''
+  )
+  const tipX = hoverPt ? (hoverPt.x > width - 74 ? hoverPt.x - 72 : hoverPt.x + 8) : 0
+  const tipY = hoverPt ? Math.max(6, hoverPt.y - 26) : 0
+  const totalSec = (safeValues.length - 1) * 2
+  const rangeLabel = totalSec >= 60
+    ? `-${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`
+    : `-0:${String(totalSec).padStart(2, '0')}`
+  const onMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0) return
+    const ratio = (event.clientX - rect.left) / rect.width
+    const idx = Math.round(ratio * (safeValues.length - 1))
+    setHoverIndex(Math.max(0, Math.min(safeValues.length - 1, idx)))
+  }
 
   return (
-    <svg className="monitor-sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t('监控图表')}>
+    <svg
+      className="monitor-sparkline"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={t('监控图表')}
+      onMouseMove={onMove}
+      onMouseLeave={() => setHoverIndex(null)}
+    >
+      <defs>
+        <linearGradient id={`spark-area-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent, #8ecbff)" stopOpacity="0.30" />
+          <stop offset="100%" stopColor="var(--accent, #8ecbff)" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
       {gridValues.map((g) => {
         const gy = padT + innerH - (g / 100) * innerH
         return (
           <g key={g}>
-            <polyline points={`${padL},${gy.toFixed(1)} ${width - padR},${gy.toFixed(1)}`} />
-            <text x={2} y={(gy + 3).toFixed(1)} className="axis-label">{g}%</text>
+            <polyline points={`${padL},${gy.toFixed(1)} ${width - padR},${gy.toFixed(1)}`} className="grid-line" />
+            <text x={4} y={(gy + 3).toFixed(1)} className="axis-label">{g}%</text>
           </g>
         )
       })}
-      {pts.length > 1 && <polygon points={areaPath} />}
+      {pts.length > 1 && <polygon points={areaPath} fill={`url(#spark-area-${gradientId})`} />}
       <path className="line" d={linePath} fill="none" />
-      {!isExtreme(maxP) && <circle cx={maxP.x} cy={maxP.y} r={2.6} className="extreme-dot max" />}
-      {!isExtreme(minP) && <circle cx={minP.x} cy={minP.y} r={2.6} className="extreme-dot min" />}
+      {!isExtreme(maxP) && <circle cx={maxP.x} cy={maxP.y} r={2.8} className="extreme-dot max" />}
+      {!isExtreme(minP) && <circle cx={minP.x} cy={minP.y} r={2.8} className="extreme-dot min" />}
       {!isExtreme(maxP) && (
-        <text x={(maxP.x + 4).toFixed(1)} y={(maxP.y - 3).toFixed(1)} className="extreme-label">
+        <text x={(maxP.x + 5).toFixed(1)} y={(maxP.y - 3).toFixed(1)} className="extreme-label">
           {maxP.v.toFixed(1)}
         </text>
       )}
       {!isExtreme(minP) && (
-        <text x={(minP.x + 4).toFixed(1)} y={(minP.y + 8).toFixed(1)} className="extreme-label">
+        <text x={(minP.x + 5).toFixed(1)} y={(minP.y + 8).toFixed(1)} className="extreme-label">
           {minP.v.toFixed(1)}
         </text>
       )}
-      <circle cx={last.x} cy={last.y} r={3} className="current-dot" />
-      <text x={padL} y={padT - 1} className="current-val">
-        {t('当前')} {last.v.toFixed(1)}%
-      </text>
-      <text x={width - padR} y={height - 1} textAnchor="end" className="sample-note">
-        {safeValues.length} {t('次采样')}
-      </text>
+      <circle cx={last.x} cy={last.y} r={3.2} className="current-dot" />
+      {hoverPt && (
+        <g>
+          <line x1={hoverPt.x} y1={padT} x2={hoverPt.x} y2={padT + innerH} className="hover-line" />
+          <circle cx={hoverPt.x} cy={hoverPt.y} r={3.6} className="hover-dot" />
+          <rect x={tipX} y={tipY} width={68} height={22} rx={4} className="hover-tip-bg" />
+          <text x={tipX + 5} y={tipY + 9} className="hover-tip-val">{hoverPt.v.toFixed(1)}%</text>
+          <text x={tipX + 5} y={tipY + 18} className="hover-tip-time">{fmtClock(hoverTime)}</text>
+        </g>
+      )}
+      <text x={padL} y={height - 4} className="axis-time">{rangeLabel}</text>
+      <text x={width - padR} y={height - 4} textAnchor="end" className="axis-time">{t('现在')}</text>
     </svg>
   )
 }
@@ -16348,11 +16386,12 @@ function peakOf(arr: number[]) {
   return arr.length ? Math.max(...arr) : 0
 }
 
-function formatRate(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return '0 B/s'
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
-  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+function formatRateMB(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0 MB/s'
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} GB/s`
+  if (value >= 1) return `${value.toFixed(1)} MB/s`
+  if (value >= 1 / 1024) return `${(value * 1024).toFixed(0)} KB/s`
+  return `${(value * 1024 * 1024).toFixed(0)} B/s`
 }
 
 function MiniSpark({ values, lineColor, areaColor }: { values: number[]; lineColor: string; areaColor: string }) {
