@@ -1159,3 +1159,20 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - SSH 认证失败/通道失败同样覆盖
 - 顺带修复改名遗留：remote_download_staging_path 测试断言 .xundu.part → .rain.part
 - 验证：cargo test 40 passed + cargo check 零警告
+
+---
+
+## 2026-09-08 · 目录清理 + 发布 1.0.3
+
+目录优化（删除）：
+- 旧名残留：Run-XunDuTerminal.cmd、.env.sandbox（前端 sandbox 模式仅环境变量未设置时不启用）
+- 社区文档：CODE_OF_CONDUCT/CONTRIBUTING/SECURITY/README_EN
+- 过时阶段文档：docs/PHASE2_PLAN、WAVE_STYLE_BACKEND_REFACTOR、SECURITY_ARCHITECTURE、REMOTE_DESKTOP、UPDATES
+- 开发测试残留：tools/（sandbox-smoke/phase2-stress/perf-sandbox）
+- 构建日志 build_1.0.1.log；.github 保留 release.yml（修正 XunDuTerminal→RainTerminal、清单路径 xunduterminal→rainterminal），删除 issue/PR 模板、dependabot、ci.yml
+
+发布 1.0.3：
+- package.json / tauri.conf.json 1.0.2 → 1.0.3（注意：勿用 PowerShell Set-Content 改含中文的 JSON，会双重转码，用 Python UTF-8）
+- CHANGELOG 新增 1.0.3 条目
+- latest.json 更新 1.0.3（sha256/size/releaseUrl）
+- NSIS 已缓存，构建成功 RainTerminal_1.0.3_x64-setup.exe（6110537 字节）
