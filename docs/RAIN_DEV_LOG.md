@@ -844,3 +844,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - X 轴固定 20 分钟窗口(setScale x [now-1200, now])，数据从右往左自然增长
 - n=0 时 setData 空数据占位，不报错
 - 验证: npm build 通过
+
+---
+
+## 2026-09-08 · 修复远程SSH监控命令单引号嵌套bug
+
+- 根因：远程采集命令外层 sh -lc '...' 用单引号包裹，内部 awk 也用单引号
+  → shell 单引号不能嵌套，awk 的 / 被吃掉、命令截断，报 awk syntax error
+- 修复：去掉外层 sh -lc '...' 包裹，SSH exec 直接发多行脚本
+  （远程 shell 直接执行，awk 单引号和  均正常）
+- 验证：cargo check 通过

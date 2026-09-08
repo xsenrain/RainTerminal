@@ -5307,8 +5307,7 @@ fn remote_system_stats_sync(
 ) -> Result<LocalSystemStats, String> {
     let started = Instant::now();
     diag_log("remote-stats", format!("start target={user}@{host}:{port}"));
-    let command = r#"sh -lc '
-printf "__XUNDU_USER__\n%s\n" "${USER:-$(id -un 2>/dev/null)}"
+    let command = r#"printf "__XUNDU_USER__\n%s\n" "${USER:-$(id -un 2>/dev/null)}"
 printf "__XUNDU_HOME__\n%s\n" "${HOME:-}"
 printf "__XUNDU_SHELL__\n%s\n" "${SHELL:-}"
 printf "__XUNDU_OS__\n"; uname -srvmo 2>/dev/null || uname -a 2>/dev/null || true
@@ -5321,7 +5320,7 @@ printf "__XUNDU_SWAP__\n"; awk '/^SwapTotal/{t=$2} /^SwapFree/{f=$2} END{printf 
 printf "__XUNDU_FREQ__\n"; awk '/^cpu MHz/{print $4; exit}' /proc/cpuinfo 2>/dev/null || true
 printf "__XUNDU_CONN__\n"; ss -tan 2>/dev/null | awk 'NR>1{c++} END{print c+0}'; ss -uan 2>/dev/null | awk 'NR>1{c++} END{print c+0}'
 printf "__XUNDU_PROCS__\n"; find /proc -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l
-'"#
+"#
     .to_string();
     let output = remote_aux_exec_output(
         aux_sessions,
