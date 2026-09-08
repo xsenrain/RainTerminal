@@ -1066,3 +1066,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 已知边缘情况（不修，记录）：连接后瞬间断开存在竞态，后端 stop 找不到 handle 时会话稍后建立；概率极低，下次 stop 可清理
 
 验证：npm build 通过；后端 cargo check 此前通过
+
+---
+
+## 2026-09-08 · 终端更多菜单新增"保存会话日志"（SSH/Telnet/Serial 通用）
+
+- widget 标题栏"更多操作"菜单新增"保存会话日志"（仅 ssh-terminal 终端，未连接时禁用）
+- 点击 → 弹出系统目录选择框 → 自动命名 {IP或串口}-{YYYYMMDDHHMMSS}.log（如 127.0.0.1-20260908220822.log，Serial 用 COM 号）→ 保存成功 toast 提示路径
+- 记录中再次点击 → 停止保存并 toast 提示日志路径
+- 记录状态与标题栏日志按钮共享（remoteTerminalLogStore），两处入口行为一致
+- 验证：npm build 通过

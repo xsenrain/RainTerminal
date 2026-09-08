@@ -2981,6 +2981,7 @@ function App() {
             onRunTerminalCli={runTerminalCli}
             serverConnectionStates={serverConnectionStates}
             terminalTheme={terminalTheme}
+            onToast={setToast}
           />
         </Profiler>
         )}
@@ -4190,6 +4191,7 @@ function Workbench({
   onRemoteStatus,
   onRunTerminalCli,
   serverConnectionStates,
+  onToast,
 }: {
   workspaces: WorkbenchWorkspace[]
   activeWorkspaceId: string
@@ -4227,6 +4229,7 @@ function Workbench({
   onRemoteStatus: (serverId: string, state: ConnectionState, message?: string) => void
   onRunTerminalCli: (widgetId: string, tool: CliToolInfo) => void
   serverConnectionStates: Record<string, ConnectionState>
+  onToast: (message: string) => void
 }) {
   const { t } = useAppLocale()
   const [dropPreview, setDropPreview] = useState<WaveDropPreview | null>(null)
@@ -4433,8 +4436,19 @@ function Workbench({
     magnified: boolean,
   ) => {
     onFocusWidget(widget.id)
+    const widgetServer = widget.serverId ? servers.find((server) => server.id === widget.serverId) : undefined
+    const isTerminal = widget.type === 'ssh-terminal'
+    const widgetSessionId = isTerminal ? getRemoteWidgetSessionId(widget) : ''
+    const terminalConnected = isTerminal ? remoteTerminalConnectedSessions.has(widgetSessionId) : false
+    const logRecording = isTerminal ? remoteTerminalLogStore.get(widgetSessionId).recording : false
     onContextMenu(event, [
       { label: t(magnified ? '退出聚焦' : '聚焦窗口'), hint: 'Alt + M', onClick: () => toggleMagnifyWidget(widget.id) },
+      ...(isTerminal ? [{
+        label: logRecording ? '停止保存会话日志' : '保存会话日志',
+        hint: widgetServer ? serverAddressLabel(widgetServer) : undefined,
+        disabled: !terminalConnected && !logRecording,
+        onClick: () => toggleWidgetSessionLog(widgetSessionId, widgetServer, onToast),
+      }] : []),
       { label: '新开本地终端', onClick: () => onAddWidget('local-terminal') },
       { label: '新开远程桌面', onClick: () => onAddWidget('remote-desktop') },
       { label: '新开文件管理', onClick: () => onAddWidget('files') },
@@ -6292,6 +6306,37 @@ const remoteTerminalLogStore = {
       this.listeners.delete(listener)
     }
   },
+}
+
+function formatLogTimestamp(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
+
+function toggleWidgetSessionLog(sessionId: string, server: ServerProfile | undefined, onToast: (message: string) => void) {
+  const state = remoteTerminalLogStore.get(sessionId)
+  if (state.recording) {
+    void invoke('session_log_stop', { sessionId })
+      .then(() => {
+        remoteTerminalLogStore.set(sessionId, { recording: false, path: '' })
+        onToast(`已停止会话日志：${state.path}`)
+      })
+      .catch((error) => onToast(`停止日志失败：${String(error)}`))
+    return
+  }
+  void invoke<string | null>('choose_log_directory')
+    .then((dir) => {
+      if (!dir) return null
+      const host = server?.host || server?.serialPort || 'device'
+      const timestamp = formatLogTimestamp(new Date())
+      return invoke<string>('session_log_start', { sessionId, dir, name: `${host}-${timestamp}` })
+    })
+    .then((path) => {
+      if (!path) return
+      remoteTerminalLogStore.set(sessionId, { recording: true, path })
+      onToast(`会话日志已开始保存：${path}`)
+    })
+    .catch((error) => onToast(`开启日志失败：${String(error)}`))
 }
 
 function RemoteTerminalLogButton({ sessionId, server }: { sessionId: string; server?: ServerProfile }) {
