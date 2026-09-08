@@ -707,3 +707,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 根因：检查更新读取仓库 deploy/rainterminal/latest.json（raw.githubusercontent.com），该清单未随 v1.0.2 发布更新，仍指向 1.0.1
 - 更新 latest.json：version 1.0.2、安装包 URL（v1.0.2 下载直链）、SHA-256 e5e1ff10…、size 5997814
 - 验证：raw.githubusercontent 200 可访问，字段与 AppUpdateInstaller 校验逻辑（sha256 64 位 hex / https github.com / size 校验）一致
+
+---
+
+## 2026-09-08 · 修复 v1.0.2 安装包界面仍显示 1.1.0-dev（用户反馈属实）
+
+- 根因：src/App.tsx 前端 APP_VERSION 为源码硬编码 '1.1.0-dev'，发布时仅改了 package.json / tauri.conf.json / Cargo.toml，漏改该常量，导致 1.0.2 安装包界面始终显示 1.1.0-dev
+- 修复：APP_VERSION 改为 '1.0.2'，重新构建安装包（SHA-256 cd1a8344…，6,000,762 B）
+- 同步：latest.json 更新新 SHA-256；GitHub Release v1.0.2 资产替换为新安装包；dist 验证无 dev 版本字符串
