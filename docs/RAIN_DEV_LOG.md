@@ -1275,3 +1275,13 @@ MTR 路由追踪（mtr tab）：
   就整体失败并弹“SSH 认证配置未应用：Password is required...”
 - 修复：改为尽力注册，跳过无效条目继续注册其余，返回注册成功条数
   （返回值改为 Result<usize, String>，前端不受影响）
+
+---
+
+## 2026-09-08 · 发布 1.0.4 正式版
+
+- 版本号四处同步：package.json / tauri.conf.json / Cargo.toml / App.tsx APP_VERSION = 1.0.4
+- README 更新：下载链接 v1.0.4、功能概览补充自动化巡检与运维小工具、终端描述补充 Telnet/Serial 与会话日志
+- 本版新增：MTR 路由追踪、密码生成器（导出/清空）、全部小工具条件撑满布局、自定义厂商管理、
+  启动 SSH 认证注册尽力注册（跳过无效条目）
+- 构建产物：RainTerminal_1.0.4_x64-setup.exe（6111573 字节，sha256 cc2f5612a044acf2df6932cef80320f8d438137dfdacd44c99f8bde7faac6455）

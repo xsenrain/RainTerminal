@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows11&logoColor=white" alt="Windows 10 / 11" />
   </p>
   <p>
-    <a href="https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.0"><strong>下载正式版</strong></a>
+    <a href="https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.4"><strong>下载正式版</strong></a>
     · <a href="#功能概览">功能概览</a>
     · <a href="#开发与构建">本地开发</a>
     · <a href="https://github.com/xsenrain/RainTerminal/issues">问题反馈</a>
@@ -27,7 +27,7 @@ RainTerminal 面向需要频繁管理多台 Windows / Linux 服务器及网络�
   <tr>
     <td width="50%" valign="top">
       <strong>终端与连接</strong><br /><br />
-      本地终端与 SSH 终端；支持密码、私钥和 SSH Agent，并可从连接文本或 <code>~/.ssh/config</code> 导入配置。
+      SSH / Telnet / Serial 手动终端；支持密码、私钥和 SSH Agent，可从连接文本或 <code>~/.ssh/config</code> 导入配置；连接后可按需保存会话日志。
     </td>
     <td width="50%" valign="top">
       <strong>文件与传输</strong><br /><br />
@@ -54,16 +54,26 @@ RainTerminal 面向需要频繁管理多台 Windows / Linux 服务器及网络�
       密钥信息存储于 Windows 凭据管理器；SSH 主机密钥变更会阻止连接，并通过确认流程安全更新。
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>自动化巡检</strong><br /><br />
+      批量 SSH 巡检 Linux 与网络设备，并发数可控、实时进度、日志目录可配置，支持表格批量导入导出设备与命令。
+    </td>
+    <td width="50%" valign="top">
+      <strong>运维小工具</strong><br /><br />
+      网段发现、端口扫描、Ping 监控、子网计算器、MTR 路由追踪与密码生成器，内置常用网络协议端口识别。
+    </td>
+  </tr>
 </table>
 
 ## 下载并开始使用
 
-> **当前版本：[`v1.0.0` 正式版](https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.0)**
+> **当前版本：[`v1.0.4` 正式版](https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.4)**
 
 | 文件 | 用途 |
 | --- | --- |
-| [`RainTerminal_1.0.0_x64-setup.exe`](https://github.com/xsenrain/RainTerminal/releases/download/v1.0.0/RainTerminal_1.0.0_x64-setup.exe) | 推荐，大多数用户选择此 NSIS 安装包 |
-| [`SHA256SUMS.txt`](https://github.com/xsenrain/RainTerminal/releases/download/v1.0.0/SHA256SUMS.txt) | 校验安装包完整性 |
+| [`RainTerminal_1.0.0_x64-setup.exe`](https://github.com/xsenrain/RainTerminal/releases/download/v1.0.4/RainTerminal_1.0.0_x64-setup.exe) | 推荐，大多数用户选择此 NSIS 安装包 |
+| [`SHA256SUMS.txt`](https://github.com/xsenrain/RainTerminal/releases/download/v1.0.4/SHA256SUMS.txt) | 校验安装包完整性 |
 
 > [!WARNING]
 > 当前安装包尚未进行 Authenticode 签名，Windows SmartScreen 可能显示安全提示。测试前请备份重要连接配置，并从本仓库 Releases 下载文件。

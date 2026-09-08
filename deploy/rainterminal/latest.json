@@ -1,11 +1,11 @@
 {
-  "version": "1.0.3",
-  "notes": "RainTerminal 1.0.3 正式版：新增 Telnet/Serial 手动连接；连接后按需保存会话日志（另存为可自定义文件名，自动剥离控制序列，输入编辑只留最终命令）；修复 SSH 保存日志即断开、Telnet 一直正在连接、本地监控频繁弹出 cmd 窗口等多项问题。",
-  "releaseUrl": "https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.3",
-  "publishedAt": "2026-09-08T00:00:00Z",
-  "windows": {
-    "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.3/RainTerminal_1.0.3_x64-setup.exe",
-    "sha256": "85897c496f8a97dc16550a3365ffcde3c2bc181e50301024db27e4528761b139",
-    "size": 6095149
-  }
+ "version": "1.0.4",
+ "notes": "RainTerminal 1.0.4 正式版：新增 MTR 路由追踪与密码生成器（可导出/清空）；小工具布局统一为内容自适应（无数据矮、有数据铺满到底内部滚动）；设备列表支持自定义厂商管理；修复启动时 SSH 认证配置误弹窗、搜索命令失效、密码为空设备注册阻断、版本号多处不同步显示等多项问题。",
+ "releaseUrl": "https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.4",
+ "publishedAt": "2026-09-08T00:00:00Z",
+ "windows": {
+  "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.4/RainTerminal_1.0.4_x64-setup.exe",
+  "sha256": "cc2f5612a044acf2df6932cef80320f8d438137dfdacd44c99f8bde7faac6455",
+  "size": 6111573
+ }
 }

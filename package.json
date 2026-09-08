@@ -1,7 +1,7 @@
 {
   "name": "rainterminal",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "面向 Windows 的开源一体化运维工作台，集成 SSH、文件管理、监控、进程、远程桌面与自动化巡检。",
   "license": "MIT",
   "repository": {
