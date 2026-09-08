@@ -9055,11 +9055,21 @@ function MachineMonitorWidget({
   const { t } = useAppLocale()
   const rememberedView = widgetId ? monitorViewCache.get(widgetId) : undefined
   const canRestoreView = rememberedView?.serverId === server?.id
-  const emptyHistory: MonitorHistory = { cpu: [], memory: [], disk: [], network: [], swap: [], networkUp: [], networkDown: [], tcp: [], udp: [] }
+  const makeEmptyHistory = (): MonitorHistory => ({
+    cpu: new Array(600).fill(Number.NaN),
+    memory: new Array(600).fill(Number.NaN),
+    disk: new Array(600).fill(Number.NaN),
+    network: new Array(600).fill(Number.NaN),
+    swap: new Array(600).fill(Number.NaN),
+    networkUp: new Array(600).fill(Number.NaN),
+    networkDown: new Array(600).fill(Number.NaN),
+    tcp: new Array(600).fill(Number.NaN),
+    udp: new Array(600).fill(Number.NaN),
+  })
   const [stats, setStats] = useState<LocalSystemStats | null>(canRestoreView ? rememberedView?.stats ?? null : null)
   const [error, setError] = useState(server && !hasSshAuthentication(server) ? '请选择可用连接，或补全该服务器的 SSH 认证信息。' : '')
   const [metric, setMetric] = useState<MonitorMetric>(canRestoreView ? rememberedView?.metric ?? 'cpu' : 'cpu')
-  const [history, setHistory] = useState<MonitorHistory>(canRestoreView ? rememberedView?.history ?? emptyHistory : emptyHistory)
+  const [history, setHistory] = useState<MonitorHistory>(() => canRestoreView ? rememberedView?.history ?? makeEmptyHistory() : makeEmptyHistory())
   const lastUpRef = useRef(0)
   const lastDownRef = useRef(0)
   const lastUpValueRef = useRef(0)

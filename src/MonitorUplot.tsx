@@ -21,7 +21,7 @@ function readTheme(): MonitorTheme {
 const SAMPLE_MS = 2000
 
 function formatClock(ts: number) {
-  const d = new Date(ts)
+  const d = new Date(ts * 1000)
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   const ss = String(d.getSeconds()).padStart(2, '0')
@@ -179,15 +179,15 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
     const now = Date.now()
     const t0 = now - (n - 1) * SAMPLE_MS
     const times = new Float64Array(n)
-    const vals = new Float64Array(n)
+    const vals: (number | null)[] = new Array(n).fill(null)
     for (let i = 0; i < n; i++) {
       times[i] = (t0 + i * SAMPLE_MS) / 1000
       const raw = values[i]
-      vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
+      vals[i] = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : null
     }
-    plot.setData([times as unknown as number[], vals as unknown as number[]])
+    plot.setData([times as unknown as number[], vals as (number | null)[] as unknown as number[]])
     // 强制 y 轴贴合数据（铺满图高），x 轴跟随数据窗口
-    const finite = vals.filter((v) => Number.isFinite(v))
+    const finite = vals.filter((v): v is number => v !== null && Number.isFinite(v))
     if (finite.length >= 2) {
       const dMin = Math.min(...finite)
       const dMax = Math.max(...finite)
@@ -198,7 +198,7 @@ function MonitorUplot({ values, label }: { values: number[]; label: string }) {
         plot.setScale('y', { min: lo, max: hi })
       }
     }
-    plot.setScale('x', { min: times[0], max: times[n - 1] })
+    plot.setScale('x', { min: t0, max: t0 + 1200 })
   }, [rebuildKey, values])
 
   return (

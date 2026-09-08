@@ -823,3 +823,14 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - Y 轴：去掉 range 函数(实测不生效)，改 setData 后 plot.setScale('y',{min,max}) 强制贴合数据铺满图高
 - X 轴范围：setScale('x') 跟随数据窗口
 - 验证：npm build 通过
+
+---
+
+## 2026-09-08 · 监控大图 v5：tooltip时间修复 + 600点固定框架
+
+- tooltip: formatClock 把秒当毫秒 new Date(ts) 显示1970时间(00:54:27)
+  → 改 new Date(ts*1000)，显示真实 HH:MM:SS
+- 节点数: history 预填充 600 个空槽(NaN->null)，图表启动即显示 20 分钟×2秒 完整框架
+- X 轴固定 20 分钟窗口(setScale x [t0, t0+1200])，不再跟随数据窗口
+- 空槽用 null(uPlot 断线)而非 0(会被画成 0% 线)
+- 验证: npm build 通过
