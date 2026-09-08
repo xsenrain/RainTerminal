@@ -970,3 +970,16 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 侧栏设备列表显示协议徽标（Telnet/Serial）
 - Cargo.toml 增加 serialport = 4.4
 - 验证：npm build + cargo check 通过
+
+---
+
+## 2026-09-08 · 阶段A补充：日志按需记录 + 侧栏按协议分类
+
+- 会话日志改为连接后按需开关（不在添加设备表单勾选）：
+  - 后端新增 session_log_start / session_log_stop 命令，按 sessionId 动态开关
+  - 终端标题栏新增日志按钮（未连接禁用，记录中高亮，tooltip 显示日志路径）
+  - 连接不再读设备配置的 logEnabled（SSH/Telnet/Serial 均默认不自动记录）
+  - ServerModal 移除日志勾选/目录区块
+- 侧栏按协议分三组：SSH 服务器 / Telnet 设备 / 串口设备，各自添加按钮带对应协议
+- 搜索框文案改为“搜索设备和远程桌面”
+- 验证：npm build + cargo check 通过
