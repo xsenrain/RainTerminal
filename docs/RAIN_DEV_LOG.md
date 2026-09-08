@@ -699,3 +699,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 
 - 版本号由 1.1.0-dev 调整为 1.0.2（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
 - 发布正式版安装包（NSIS exe）
+
+---
+
+## 2026-09-08 · 修复检查更新仍显示 1.0.1
+
+- 根因：检查更新读取仓库 deploy/rainterminal/latest.json（raw.githubusercontent.com），该清单未随 v1.0.2 发布更新，仍指向 1.0.1
+- 更新 latest.json：version 1.0.2、安装包 URL（v1.0.2 下载直链）、SHA-256 e5e1ff10…、size 5997814
+- 验证：raw.githubusercontent 200 可访问，字段与 AppUpdateInstaller 校验逻辑（sha256 64 位 hex / https github.com / size 校验）一致
