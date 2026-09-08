@@ -1663,6 +1663,7 @@ pub async fn ping_batch_tool(
     app: tauri::AppHandle,
     hosts: Vec<String>,
     count: u32,
+    timeout_ms: u32,
 ) -> Result<Vec<PingHostDetail>, String> {
     let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<PingHostDetail>, String> {
         let mut hosts: Vec<String> = hosts
@@ -1679,6 +1680,7 @@ pub async fn ping_batch_tool(
             return Err("最多支持 128 个主机同时探测".to_string());
         }
         let count = count.clamp(1, 100);
+        let timeout_ms = timeout_ms.clamp(200, 3000);
         let results: Arc<std::sync::Mutex<Vec<PingHostDetail>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let remaining = Arc::new(AtomicUsize::new(hosts.len()));
         let mut handles = Vec::with_capacity(hosts.len());
@@ -1686,6 +1688,7 @@ pub async fn ping_batch_tool(
             let app = app.clone();
             let results = Arc::clone(&results);
             let remaining = Arc::clone(&remaining);
+            let timeout_ms = timeout_ms;
             handles.push(std::thread::spawn(move || {
                 let ips = match dns_lookup::lookup_host(&host) {
                     Ok(ips) => ips,
@@ -1712,7 +1715,7 @@ pub async fn ping_batch_tool(
                 let mut rows = Vec::with_capacity(count as usize);
                 for seq in 1..=count {
                     let started = std::time::Instant::now();
-                    let detail = ping_host_detailed(ip, 1000);
+                    let detail = ping_host_detailed(ip, timeout_ms);
                     let elapsed_ms = started.elapsed().as_millis() as u32;
                     let (ok, rtt_ms, ttl) = match detail {
                         Some((r, tt)) => (true, r, tt),
@@ -1730,9 +1733,6 @@ pub async fn ping_batch_tool(
                         "ping-batch-row",
                         serde_json::json!({ "ip": ip.to_string(), "seq": seq, "ok": ok, "rtt_ms": rtt_ms, "ttl": ttl }),
                     );
-                    if seq < count {
-                        std::thread::sleep(Duration::from_millis(300));
-                    }
                 }
                 results.lock().unwrap().push(PingHostDetail {
                     ip: ip.to_string(),

@@ -667,6 +667,7 @@ const englishUi: Record<string, string> = {
   '输入要执行的命令': 'Enter a command to run',
   '并发': 'Concurrency',
   '超时': 'Timeout',
+  '超时(ms)': 'Timeout (ms)',
   '清除': 'Clear',
   '全选': 'Select all',
   '预览并执行': 'Review and run',

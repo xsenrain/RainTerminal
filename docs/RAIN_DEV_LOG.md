@@ -674,3 +674,13 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 自动化界面宽度缩小根因：inspect-workspace 用 CSS Grid grid-column:2 定位，上一轮为切页不丢状态包进常驻 div 后不再是 Grid 直接子项导致定位失效、宽度收缩；常驻 div 改为 flex-direction:column + 交叉轴拉伸恢复满宽
 - Ping 停止按钮计数改为轮数（持续监控每 1 秒一轮 = 每秒 +1），与"每秒一次"语义一致；每台成功/失败次数仍由主表准确累计
 - 验证：npm run build 通过
+
+---
+
+## 2026-09-08 · Ping 功能效率优化
+
+- 后端 ping_batch_tool 新增 timeout_ms 参数（clamp 200-3000，默认前端传 500），单次探测超时从硬编码 1000ms 降至默认 500ms，不通主机探测时间减半
+- 移除每次探测间的 300ms 固定间隔：一次性模式 count=10 由约 3s（通）/13s（不通）提速至约 0.1s（通）/5s（不通）
+- 前端批量 Ping 新增「超时(ms)」输入框（默认 500，范围 200-3000），可自行调节
+- tauriBridge mock 同步 timeoutMs；i18n 增加超时(ms) 键
+- 验证：npm run build + cargo check + cargo test --lib icmp（2 passed）通过

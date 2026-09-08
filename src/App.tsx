@@ -11068,6 +11068,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const { t } = useAppLocale()
   const [hostsRaw, setHostsRaw] = useState('192.168.1.1\n192.168.1.2')
   const [count, setCount] = useState('10')
+  const [timeoutMs, setTimeoutMs] = useState('500')
   const [monitor, setMonitor] = useState(false)
   const [running, setRunning] = useState(false)
   const [summary, setSummary] = useState<Record<string, PingSummary>>({})
@@ -11139,7 +11140,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   async function runOneRound(hosts: string[], n: number) {
     try {
       // 统计与明细一律以实时事件（ping-batch-row）为准，invoke 返回只补充主机名，避免重复计数
-      const details = await invoke<{ ip: string; hostname: string; rows: PingBatchRow[] }[]>('ping_batch_tool', { hosts, count: n })
+      const details = await invoke<{ ip: string; hostname: string; rows: PingBatchRow[] }[]>('ping_batch_tool', { hosts, count: n, timeoutMs: Math.max(200, Math.min(3000, Number(timeoutMs) || 500)) })
       const hostnames: Record<string, string> = {}
       for (const d of details) hostnames[d.ip] = d.hostname
       setDetail((prev) => {
@@ -11249,6 +11250,20 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
               disabled={running}
               style={{ width: 64 }}
               title={t('次数（1-100）')}
+            />
+          </div>
+          <div className="inspect-discover-row">
+            <span className="inspect-discover-label">{t('超时(ms)')}</span>
+            <input
+              value={timeoutMs}
+              onChange={(event) => setTimeoutMs(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void startPing()
+              }}
+              placeholder="500"
+              disabled={running}
+              style={{ width: 64 }}
+              title={t('单次探测超时毫秒数（200-3000），越小探测越快，过小可能误报超时')}
             />
           </div>
           <label className="inspect-check-row">

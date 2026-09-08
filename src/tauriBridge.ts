@@ -269,10 +269,11 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       // 沙箱 mock：多主机并行 ping（每 4 次失败 1 次）
       const hosts: string[] = Array.isArray(args.hosts) ? (args.hosts as string[]).map(String) : []
       const count = Math.max(1, Math.min(100, Number(args.count) || 10))
+      const timeoutMs = Math.max(200, Math.min(3000, Number(args.timeoutMs) || 500))
       hosts.forEach((host, hostIdx) => {
         for (let seq = 1; seq <= count; seq++) {
           const ok = (hostIdx + seq) % 4 !== 0
-          const rtt = ok ? 2 + ((hostIdx + seq * 7) % 24) : 1000
+          const rtt = ok ? 2 + ((hostIdx + seq * 7) % 24) : timeoutMs
           window.setTimeout(
             () => emitSandbox('ping-batch-row', { ip: host, seq, ok, rtt_ms: rtt, ttl: ok ? 63 : 0 }),
             hostIdx * 400 + seq * 500,
@@ -283,7 +284,7 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
         const rows: { seq: number; ok: boolean; rttMs: number; ttl: number; time: string }[] = []
         for (let seq = 1; seq <= count; seq++) {
           const ok = (hostIdx + seq) % 4 !== 0
-          rows.push({ seq, ok, rttMs: ok ? 2 + ((hostIdx + seq * 7) % 24) : 1000, ttl: ok ? 63 : 0, time: '12:00:00' })
+          rows.push({ seq, ok, rttMs: ok ? 2 + ((hostIdx + seq * 7) % 24) : timeoutMs, ttl: ok ? 63 : 0, time: '12:00:00' })
         }
         return { ip: host, hostname: '', rows }
       }) as T
