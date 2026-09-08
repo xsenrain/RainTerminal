@@ -6369,28 +6369,32 @@ function RemoteTerminalWidget({
   function startTerminalSession(targetServer: ServerProfile, size: { cols: number; rows: number }) {
     if (targetServer.protocol === 'telnet') {
       return invoke('telnet_connect', {
-        sessionId: sessionIdRef.current,
-        host: targetServer.host,
-        port: targetServer.port,
-        cols: size.cols,
-        rows: size.rows,
-        logEnabled: false,
-        logPath: null,
-        name: targetServer.name,
+        request: {
+          sessionId: sessionIdRef.current,
+          host: targetServer.host,
+          port: targetServer.port,
+          cols: size.cols,
+          rows: size.rows,
+          logEnabled: false,
+          logPath: null,
+          name: targetServer.name,
+        },
       })
     }
     if (targetServer.protocol === 'serial') {
       return invoke('serial_connect', {
-        sessionId: sessionIdRef.current,
-        portName: targetServer.serialPort ?? '',
-        baudRate: targetServer.baudRate ?? 9600,
-        dataBits: targetServer.dataBits ?? 8,
-        stopBits: targetServer.stopBits ?? 1,
-        parity: targetServer.parity ?? 'none',
-        flowControl: targetServer.flowControl ?? 'none',
-        logEnabled: false,
-        logPath: null,
-        name: targetServer.name,
+        request: {
+          sessionId: sessionIdRef.current,
+          portName: targetServer.serialPort ?? '',
+          baudRate: targetServer.baudRate ?? 9600,
+          dataBits: targetServer.dataBits ?? 8,
+          stopBits: targetServer.stopBits ?? 1,
+          parity: targetServer.parity ?? 'none',
+          flowControl: targetServer.flowControl ?? 'none',
+          logEnabled: false,
+          logPath: null,
+          name: targetServer.name,
+        },
       })
     }
     return invoke('ssh_connect', {

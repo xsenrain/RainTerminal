@@ -1008,3 +1008,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - Telnet 后端健壮性：写超时 200ms→5s；ECHO 改为接受（WILL ECHO，网络设备更兼容）
 - SFTP/监控/进程仅 SSH：openServerTerminal 的“连接时打开”对非 SSH 设备不创建 aux widget
 - 验证：npm build + cargo check 通过
+
+---
+
+## 2026-09-08 · 修复：telnet_connect / serial_connect 参数格式错误
+
+- 后端命令参数为 request 结构体（非平铺），前端 invoke 需以 { request: {...} } 包裹
+- 之前平铺传参导致 "missing required key request"，Telnet/Serial 连接直接失败
+- 修复 startTerminalSession 两处调用，构建通过
