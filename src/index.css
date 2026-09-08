@@ -7718,12 +7718,16 @@ body.native-window-drag-active .monitor-tabs button {
   flex-direction: column;
   min-height: 0;
 }
-.inspect-toolbox-card.inspect-card-fill {
-  flex: 1 1 auto;
+.inspect-toolbox-card > * {
+  flex: 0 0 auto;
+}
+.inspect-toolbox-card > .inspect-fill-scroll {
+  flex: 0 1 auto;
 }
 .inspect-fill-scroll {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
 }
 .inspect-check-row {
