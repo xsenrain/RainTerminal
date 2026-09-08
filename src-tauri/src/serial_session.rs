@@ -400,7 +400,7 @@ pub fn serial_session_stop(
     };
     if let Some(handle) = handle {
         handle.alive.store(false, Ordering::SeqCst);
-        if let Ok(mut writer) = handle.writer.lock() {
+        if let Ok(writer) = handle.writer.lock() {
             let _ = writer.clear(serialport::ClearBuffer::All);
         }
         session_log_close(&session_id);

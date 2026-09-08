@@ -1,5 +1,5 @@
 // Telnet 终端会话：标准 IAC 协商（NAWS/TTYPE/ECHO/SGA），适用于网络设备与 Linux
-use crate::session_log::{session_log_close, session_log_open, session_log_write, session_log_write_bytes};
+use crate::session_log::{session_log_close, session_log_open, session_log_write_bytes};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -110,7 +110,7 @@ fn validate_id(value: &str) -> Result<(), String> {
 fn send_naws(stream: &mut TcpStream, cols: u32, rows: u32) {
     let c = cols.clamp(20, 65535) as u16;
     let r = rows.clamp(8, 65535) as u16;
-    let mut msg = vec![IAC, SB, NAWS, (c >> 8) as u8, (c & 0xff) as u8, (r >> 8) as u8, (r & 0xff) as u8, IAC, SE];
+    let msg = vec![IAC, SB, NAWS, (c >> 8) as u8, (c & 0xff) as u8, (r >> 8) as u8, (r & 0xff) as u8, IAC, SE];
     let _ = stream.write_all(&msg);
 }
 
