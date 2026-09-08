@@ -1188,3 +1188,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 修复：spawn 前调用 hide_command_window（CREATE_NO_WINDOW 0x08000000）
 - 进程列表用 sysinfo 无外部命令；netstat 是唯一监控外部命令调用点
 - 验证：cargo check 零警告
+
+---
+
+## 2026-09-08 · 取消"查看发布说明"按钮 + 重发 1.0.3
+
+- 更新弹窗移除"查看发布说明"/"前往仓库"按钮（openExternalUrl 函数、externalLinkFeedback、ExternalLink 导入一并清理，tsc 零错误）
+- 用户安装包显示 1.0.2 是旧包；源码版本已为 1.0.3
+- 重新构建 1.0.3（含 netstat 弹窗修复），替换 GitHub release v1.0.3 安装包资产，更新 latest.json

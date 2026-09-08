@@ -93,7 +93,6 @@ import {
   Eraser,
   Eye,
   EyeOff,
-  ExternalLink,
   FileClock,
   FolderOpen,
   FolderTree,
@@ -14350,7 +14349,6 @@ function SettingsModal({
     installerPath: '',
     error: '',
   })
-  const [externalLinkFeedback, setExternalLinkFeedback] = useState('')
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const updateDownloadRef = useRef<{ id: string; cancelled: boolean } | null>(null)
 
@@ -14525,20 +14523,6 @@ function SettingsModal({
         status: 'ready',
         error: String(reason).replace(/^Error:\s*/i, ''),
       }))
-    }
-  }
-
-  async function openExternalUrl(url: string) {
-    setExternalLinkFeedback('')
-    try {
-      await invoke('open_external_url', { url })
-    } catch {
-      try {
-        await navigator.clipboard.writeText(url)
-        setExternalLinkFeedback('无法打开链接，地址已复制。')
-      } catch {
-        setExternalLinkFeedback('无法打开链接，请稍后重试。')
-      }
     }
   }
 
@@ -14926,13 +14910,6 @@ function SettingsModal({
                               ? '暂时无法连接更新服务；开源后可前往仓库查看最新版本。'
                               : '点击检查更新以获取最新版本信息。')}
                     </span>
-                    {updateResult?.status === 'available' && updateResult.releaseUrl && !updateResult.installer && (
-                      <button type="button" onClick={() => {
-                        if (updateResult.releaseUrl) void openExternalUrl(updateResult.releaseUrl)
-                      }}>
-                        {t('前往仓库')}<ExternalLink size={13} />
-                      </button>
-                    )}
                   </div>
                   {updateResult?.notes && <p className="about-update-notes">{updateResult.notes}</p>}
                   {updateResult?.status === 'available' && (
@@ -14986,13 +14963,6 @@ function SettingsModal({
                             <PackageOpen size={14} />{t(updateDownload.status === 'launching' ? '正在启动…' : '打开安装程序')}
                           </button>
                         )}
-                        {updateResult.releaseUrl && (
-                          <button className="ghost-button compact" type="button" onClick={() => {
-                            if (updateResult.releaseUrl) void openExternalUrl(updateResult.releaseUrl)
-                          }}>
-                            <ExternalLink size={14} />{t('查看发布说明')}
-                          </button>
-                        )}
                       </div>
                       {updateResult.installer && (
                         <small className="about-update-safety-note">{t('下载后会自动核对文件大小与 SHA-256；安装仍需由你确认，不会静默覆盖。')}</small>
@@ -15000,8 +14970,6 @@ function SettingsModal({
                     </div>
                   )}
                 </section>
-
-                {externalLinkFeedback && <p className="about-inline-feedback" role="status">{t(externalLinkFeedback)}</p>}
 
                 <section className="about-security-card">
                   <InfoRow icon={<ShieldCheck size={16} />} label={t('凭据存储')} value="Windows Credential Manager" />

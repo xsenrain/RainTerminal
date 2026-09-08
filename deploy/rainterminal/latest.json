@@ -1,11 +1,11 @@
 {
   "version": "1.0.3",
-  "notes": "RainTerminal 1.0.3 正式版：新增 Telnet/Serial 手动连接；连接后按需保存会话日志（另存为可自定义文件名，自动剥离控制序列，输入编辑只留最终命令）；修复 SSH 保存日志即断开、Telnet 一直正在连接等多项问题。",
+  "notes": "RainTerminal 1.0.3 正式版：新增 Telnet/Serial 手动连接；连接后按需保存会话日志（另存为可自定义文件名，自动剥离控制序列，输入编辑只留最终命令）；修复 SSH 保存日志即断开、Telnet 一直正在连接、本地监控频繁弹出 cmd 窗口等多项问题。",
   "releaseUrl": "https://github.com/xsenrain/RainTerminal/releases/tag/v1.0.3",
   "publishedAt": "2026-09-08T00:00:00Z",
   "windows": {
     "url": "https://github.com/xsenrain/RainTerminal/releases/download/v1.0.3/RainTerminal_1.0.3_x64-setup.exe",
-    "sha256": "a5417e4690314ea8c3e0ad49f09086af0d6dfa065a6f0661ca7a239f88d6f60a",
-    "size": 6110537
+    "sha256": "4362a58ce468690f75eccbdaeb3631548eca68d955b7cbef53e4a8cab1957c4e",
+    "size": 6116727
   }
 }
