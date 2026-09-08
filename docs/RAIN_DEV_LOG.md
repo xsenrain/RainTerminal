@@ -983,3 +983,12 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 侧栏按协议分三组：SSH 服务器 / Telnet 设备 / 串口设备，各自添加按钮带对应协议
 - 搜索框文案改为“搜索设备和远程桌面”
 - 验证：npm build + cargo check 通过
+
+---
+
+## 2026-09-08 · 修复：Telnet/Serial 保存与打开被 SSH 密码校验拦截
+
+- saveServer 保存校验改为按协议：serial 校验串口、telnet 校验主机端口、ssh 才校验密码/私钥
+- openServerTerminal 打开终端按协议校验（serial 校验串口，不再误报“主机不能为空”）
+- openServerAuxWidget 文件/监控/进程仅允许 SSH 设备；右键菜单对非 SSH 设备隐藏这三项
+- 验证：npm build 通过

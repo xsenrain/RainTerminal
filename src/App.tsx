@@ -1545,11 +1545,17 @@ function App() {
   function saveServer(draft: ServerDraft) {
     const normalized = normalizeServerProfile(draft)
     if (!normalized) {
-      setToast('服务器主机不能为空，端口必须在 1-65535 之间')
+      setToast('设备主机不能为空，端口必须在 1-65535 之间')
       return
     }
-    if (!hasSshAuthentication(normalized)) {
-      setToast(normalized.auth === 'Key' ? '请选择 SSH 私钥文件' : '请输入 SSH 密码')
+    if (!hasConnectionAuthentication(normalized)) {
+      if (normalized.protocol === 'serial') {
+        setToast('请选择串口')
+      } else if (normalized.protocol === 'telnet') {
+        setToast('请填写 Telnet 主机和端口')
+      } else {
+        setToast(normalized.auth === 'Key' ? '请选择 SSH 私钥文件' : '请输入 SSH 密码')
+      }
       return
     }
 
@@ -1702,14 +1708,20 @@ function App() {
       selectServer(server.id)
     }
 
-    if (!server.host.trim()) {
-      setToast('服务器主机不能为空')
+    if (server.protocol === 'serial') {
+      if (!server.serialPort) {
+        setToast('请先编辑设备并选择串口')
+        setServerModal(server)
+        return
+      }
+    } else if (!server.host.trim()) {
+      setToast('设备主机不能为空')
       setServerModal(server)
       return
     }
 
-    if (!hasSshAuthentication(server)) {
-      setToast('请先编辑服务器并补全 SSH 认证信息')
+    if (!hasConnectionAuthentication(server)) {
+      setToast(server.protocol === 'telnet' ? '请先编辑设备并补全 Telnet 连接信息' : '请先编辑设备并补全 SSH 认证信息')
       setServerModal(server)
       return
     }
@@ -1804,6 +1816,10 @@ function App() {
   }
 
   function openServerAuxWidget(server: ServerProfile, type: Extract<WorkbenchWidgetType, 'files' | 'monitor' | 'processes'>) {
+    if (server.protocol && server.protocol !== 'ssh') {
+      setToast('文件管理/机器监控/系统进程仅支持 SSH 设备')
+      return
+    }
     if (server.id !== selectedServerId) {
       selectServer(server.id)
     }
@@ -1867,9 +1883,11 @@ function App() {
         hint: server.protocol === 'serial' ? (server.serialPort ?? '') : sshAuthenticationHint(server),
         onClick: () => connectServerFromList(server),
       },
-      { label: '打开文件管理', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'files') },
-      { label: '打开机器监控', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'monitor') },
-      { label: '打开系统进程', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'processes') },
+      ...(server.protocol === 'ssh' ? [
+        { label: '打开文件管理', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'files') },
+        { label: '打开机器监控', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'monitor') },
+        { label: '打开系统进程', hint: hasSshAuthentication(server) ? server.host : sshAuthenticationHint(server), onClick: () => openServerAuxWidget(server, 'processes') },
+      ] : []),
       { label: '编辑设备', hint: server.host, onClick: () => setServerModal(server) },
       {
         label: '复制连接地址',
