@@ -666,3 +666,11 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
 - 停止按钮文案：去掉 /总数，显示「停止 + 累计 ping 次数」（成功+失败总和）
 - 移除废弃 doneCount/hostTotal 状态
 - 验证：npm run build 通过
+
+---
+
+## 2026-09-08 · 修复：自动化界面宽度收缩 + Ping 停止计数语义
+
+- 自动化界面宽度缩小根因：inspect-workspace 用 CSS Grid grid-column:2 定位，上一轮为切页不丢状态包进常驻 div 后不再是 Grid 直接子项导致定位失效、宽度收缩；常驻 div 改为 flex-direction:column + 交叉轴拉伸恢复满宽
+- Ping 停止按钮计数改为轮数（持续监控每 1 秒一轮 = 每秒 +1），与"每秒一次"语义一致；每台成功/失败次数仍由主表准确累计
+- 验证：npm run build 通过
