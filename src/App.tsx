@@ -10600,8 +10600,8 @@ function InspectToolbox({
     setDiscoverVendor({})
     try {
       const hits = await invoke<{ ip: string; name: string; open_ports: number[] }[]>('scan_inspect_network', {
-        start_ip: discoverStart,
-        end_ip: discoverEnd,
+        startIp: discoverStart,
+        endIp: discoverEnd,
       })
       // 兜底合并（正常情况下事件已流式填充）
       setDiscoverRows((prev) => {

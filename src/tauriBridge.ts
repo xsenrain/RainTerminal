@@ -192,8 +192,8 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
     }
     case 'scan_inspect_network': {
       // 沙箱 mock：模拟流式（先 alive 后 port）
-      const startIp = typeof args.start_ip === 'string' ? args.start_ip : '192.168.1.1'
-      const endIp = typeof args.end_ip === 'string' ? args.end_ip : '192.168.1.254'
+      const startIp = typeof args.startIp === 'string' ? args.startIp : '192.168.1.1'
+      const endIp = typeof args.endIp === 'string' ? args.endIp : '192.168.1.254'
       const seg = startIp.split('.').slice(0, 3).join('.')
       const startLast = Number(startIp.split('.')[3] ?? 1)
       const endLast = Number(endIp.split('.')[3] ?? 254)
