@@ -10701,7 +10701,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
             </div>
           )}
           {(discoverScanning || discoverFinished || Object.keys(discoverRows).length > 0) && (
-            <div className="inspect-scan-table-wrap">
+            <div className="inspect-scan-table-wrap inspect-fill-scroll">
               <table className="inspect-scan-table">
                 <thead>
                   <tr>
@@ -10961,7 +10961,7 @@ function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
         </div>
       )}
       {(scanning || finished || Object.keys(rows).length > 0) && (
-        <div className="inspect-scan-table-wrap" style={{ maxHeight: 340, overflowY: 'auto' }}>
+        <div className="inspect-scan-table-wrap inspect-fill-scroll">
           <table className="inspect-scan-table">
             <thead>
               <tr>
@@ -11037,14 +11037,30 @@ function parseHostList(raw: string): string[] {
   return [...out]
 }
 
+interface PingSummary {
+  ok: number
+  fail: number
+  rttSum: number
+  lastOk: boolean | null
+  lastOkTime: string
+  lastFailTime: string
+  curStreak: number
+  maxStreak: number
+  replyIp: string
+}
+
+function formatTime(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const { t } = useAppLocale()
   const [hostsRaw, setHostsRaw] = useState('192.168.1.1\n192.168.1.2')
   const [count, setCount] = useState('10')
+  const [monitor, setMonitor] = useState(false)
   const [running, setRunning] = useState(false)
-  const [summary, setSummary] = useState<
-    Record<string, { ok: number; fail: number; rtts: number[]; lastOk: boolean | null }>
-  >({})
+  const [summary, setSummary] = useState<Record<string, PingSummary>>({})
   const [detail, setDetail] = useState<Record<string, { hostname: string; rows: PingBatchRow[] }>>({})
   const [selectedIp, setSelectedIp] = useState<string | null>(null)
   const [doneCount, setDoneCount] = useState(0)
@@ -11053,32 +11069,43 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   const [finished, setFinished] = useState(false)
 
   // 高频事件缓冲：后端并行 ping 事件可达数百条/秒，先入队，200ms 批量合并更新一次，明细仍近实时
-  const rowBufferRef = useRef<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }[]>([])
+  const rowBufferRef = useRef<{ ip: string; ok: boolean; rttMs: number; ttl: number }[]>([])
+  const seqRef = useRef(0)
+  const runningRef = useRef(false)
+  const monitorTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     const flush = window.setInterval(() => {
       const batch = rowBufferRef.current
       if (batch.length === 0) return
       rowBufferRef.current = []
+      const now = formatTime(new Date())
       setSummary((prev) => {
         const next = { ...prev }
         for (const { ip, ok, rttMs } of batch) {
-          const cur = next[ip] ?? { ok: 0, fail: 0, rtts: [], lastOk: null }
+          const cur = next[ip] ?? { ok: 0, fail: 0, rttSum: 0, lastOk: null, lastOkTime: '', lastFailTime: '', curStreak: 0, maxStreak: 0, replyIp: '' }
           next[ip] = {
             ok: cur.ok + (ok ? 1 : 0),
             fail: cur.fail + (ok ? 0 : 1),
-            rtts: ok ? [...cur.rtts, rttMs] : cur.rtts,
+            rttSum: ok ? cur.rttSum + rttMs : cur.rttSum,
             lastOk: ok,
+            lastOkTime: ok ? now : cur.lastOkTime,
+            lastFailTime: ok ? cur.lastFailTime : now,
+            curStreak: ok ? 0 : cur.curStreak + 1,
+            maxStreak: ok ? cur.maxStreak : Math.max(cur.maxStreak, cur.curStreak + 1),
+            replyIp: cur.replyIp || ip,
           }
         }
         return next
       })
       setDetail((prev) => {
         const next = { ...prev }
-        for (const { ip, seq, ok, rttMs, ttl } of batch) {
+        for (const { ip, ok, rttMs, ttl } of batch) {
+          seqRef.current += 1
           const cur = next[ip] ?? { hostname: '', rows: [] }
-          if (cur.rows.some((r) => r.seq === seq)) continue
-          next[ip] = { hostname: cur.hostname, rows: [...cur.rows, { seq, ok, rttMs, ttl, time: '' }] }
+          const rows = [...cur.rows, { seq: seqRef.current, ok, rttMs, ttl, time: now }]
+          if (rows.length > 500) rows.splice(0, rows.length - 500)
+          next[ip] = { hostname: cur.hostname, rows }
         }
         return next
       })
@@ -11089,33 +11116,85 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
   useEffect(() => {
     const tasks = [
       listen<{ ip: string; seq: number; ok: boolean; rttMs: number; ttl: number }>('ping-batch-row', (event) => {
-        rowBufferRef.current.push({
-          ip: event.payload.ip,
-          seq: event.payload.seq,
-          ok: event.payload.ok,
-          rttMs: event.payload.rttMs,
-          ttl: event.payload.ttl,
-        })
+        rowBufferRef.current.push({ ip: event.payload.ip, ok: event.payload.ok, rttMs: event.payload.rttMs, ttl: event.payload.ttl })
       }).catch(() => () => undefined),
       listen<{ host: string; message: string }>('ping-batch-error', (event) => {
         setErrors((prev) => (prev.includes(event.payload.host) ? prev : [...prev, event.payload.host]))
       }).catch(() => () => undefined),
-      listen<{ ip: string; left: number }>('ping-batch-done', (event) => {
-        setDoneCount((prev) => {
-          const next = prev + 1
-          if (next >= hostTotal) setFinished(true)
-          return next
-        })
-        void event.payload
+      listen<{ ip: string; left: number }>('ping-batch-done', () => {
+        setDoneCount((prev) => prev + 1)
       }).catch(() => () => undefined),
     ]
     return () => {
       void Promise.all(tasks).then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()))
     }
-  }, [hostTotal])
+  }, [])
 
-  async function runPing() {
-    if (running) return
+  async function runOneRound(hosts: string[], n: number) {
+    try {
+      const details = await invoke<{ ip: string; hostname: string; rows: PingBatchRow[] }[]>('ping_batch_tool', { hosts, count: n })
+      const now = formatTime(new Date())
+      const detailMap: Record<string, { hostname: string; rows: PingBatchRow[] }> = {}
+      const summaryMap: Record<string, PingSummary> = {}
+      for (const d of details) {
+        const rows = d.rows.map((r) => ({ ...r, time: now }))
+        if (rows.length > 500) rows.splice(0, rows.length - 500)
+        detailMap[d.ip] = { hostname: d.hostname, rows }
+        let ok = 0
+        let fail = 0
+        let rttSum = 0
+        let lastOk: boolean | null = null
+        let lastOkTime = ''
+        let lastFailTime = ''
+        let curStreak = 0
+        let maxStreak = 0
+        for (const r of d.rows) {
+          if (r.ok) {
+            ok += 1
+            rttSum += r.rttMs
+            lastOk = true
+            lastOkTime = now
+            curStreak = 0
+          } else {
+            fail += 1
+            lastOk = false
+            lastFailTime = now
+            curStreak += 1
+            maxStreak = Math.max(maxStreak, curStreak)
+          }
+        }
+        summaryMap[d.ip] = { ok, fail, rttSum, lastOk, lastOkTime, lastFailTime, curStreak, maxStreak, replyIp: d.ip }
+      }
+      setDetail((prev) => {
+        const next = { ...prev }
+        for (const [ip, v] of Object.entries(detailMap)) {
+          const cur = next[ip] ?? { hostname: v.hostname, rows: [] }
+          next[ip] = { hostname: v.hostname, rows: [...cur.rows, ...v.rows].slice(-500) }
+        }
+        return next
+      })
+      setSummary((prev) => ({ ...prev, ...summaryMap }))
+      return true
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setErrors([message])
+      onNotify(message)
+      return false
+    }
+  }
+
+  function stopPing() {
+    runningRef.current = false
+    if (monitorTimerRef.current !== null) {
+      window.clearTimeout(monitorTimerRef.current)
+      monitorTimerRef.current = null
+    }
+    setRunning(false)
+    setFinished(true)
+  }
+
+  async function startPing() {
+    if (runningRef.current) return
     const hosts = parseHostList(hostsRaw)
     if (hosts.length === 0) {
       setErrors([t('主机列表为空')])
@@ -11134,46 +11213,32 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
     setSelectedIp(null)
     setDoneCount(0)
     setHostTotal(hosts.length)
-    try {
-      const details = await invoke<
-        { ip: string; hostname: string; rows: PingBatchRow[] }[]
-      >('ping_batch_tool', { hosts, count: n })
-      const detailMap: Record<string, { hostname: string; rows: PingBatchRow[] }> = {}
-      const summaryMap: Record<string, { ok: number; fail: number; rtts: number[]; lastOk: boolean | null }> = {}
-      for (const d of details) {
-        detailMap[d.ip] = { hostname: d.hostname, rows: d.rows }
-        let ok = 0
-        let fail = 0
-        const rtts: number[] = []
-        for (const r of d.rows) {
-          if (r.ok) {
-            ok += 1
-            rtts.push(r.rttMs)
-          } else {
-            fail += 1
-          }
-        }
-        summaryMap[d.ip] = { ok, fail, rtts, lastOk: d.rows.length ? d.rows[d.rows.length - 1].ok : null }
-      }
-      setDetail(detailMap)
-      setSummary((prev) => ({ ...prev, ...summaryMap }))
-      if (details.length === 0) setFinished(true)
-    } catch (reason) {
-      const message = String(reason).replace(/^Error:\s*/i, '')
-      setErrors([message])
-      onNotify(message)
-    } finally {
+    runningRef.current = true
+    if (!monitor) {
+      await runOneRound(hosts, n)
+      runningRef.current = false
       setRunning(false)
+      setFinished(true)
+      return
     }
+    // 持续监控：每 1 秒一轮（每台 1 次探测），本轮完成后再隔 1s 起下一轮
+    const tick = async () => {
+      if (!runningRef.current) return
+      await runOneRound(hosts, 1)
+      if (runningRef.current) {
+        monitorTimerRef.current = window.setTimeout(() => void tick(), 1000)
+      }
+    }
+    await tick()
   }
 
-  const lossPct = (row: { ok: number; fail: number }) => {
+  const lossPct = (row: PingSummary) => {
     const total = row.ok + row.fail
     return total > 0 ? ((row.fail / total) * 100).toFixed(1) : '0.0'
   }
-  const avgMs = (rtts: number[]) => (rtts.length ? (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(1) : '-')
+  const avgMs = (row: PingSummary) => (row.ok > 0 ? (row.rttSum / row.ok).toFixed(1) : '-')
 
-  const summaryIps = Object.keys(summary)
+  const summaryIps = Object.keys(summary).sort()
 
   return (
     <div className="inspect-toolbox-card">
@@ -11201,7 +11266,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
               value={count}
               onChange={(event) => setCount(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') void runPing()
+                if (event.key === 'Enter') void startPing()
               }}
               placeholder="10"
               disabled={running}
@@ -11209,9 +11274,13 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
               title={t('次数（1-100）')}
             />
           </div>
-          <button className="utility-primary-button compact" type="button" onClick={() => void runPing()} disabled={running}>
+          <label className="inspect-check-row">
+            <input type="checkbox" checked={monitor} onChange={(event) => setMonitor(event.target.checked)} disabled={running} />
+            <span>{t('持续监控（每秒一轮）')}</span>
+          </label>
+          <button className="utility-primary-button compact" type="button" onClick={() => (running ? stopPing() : void startPing())}>
             <RefreshCw size={13} />
-            {running ? `${t('探测中')}… ${doneCount}/${hostTotal}` : t('开始探测')}
+            {running ? `${t('停止')} ${doneCount}/${hostTotal}` : t('开始探测')}
           </button>
         </div>
       </div>
@@ -11223,23 +11292,28 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
         </div>
       )}
       {(running || finished || summaryIps.length > 0) && (
-        <div className="inspect-scan-table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+        <div className="inspect-scan-table-wrap inspect-fill-scroll">
           <table className="inspect-scan-table">
             <thead>
               <tr>
                 <th>{t('IP 地址')}</th>
                 <th>{t('主机名')}</th>
+                <th>{t('应答 IP')}</th>
                 <th>{t('成功次数')}</th>
                 <th>{t('失败次数')}</th>
-                <th>{t('丢包率')}</th>
-                <th>{t('平均用时')}</th>
+                <th>{t('连续失败')}</th>
+                <th>{t('最大连续失败')}</th>
+                <th>{t('失败百分比')}</th>
                 <th>{t('最后状态')}</th>
+                <th>{t('最后成功')}</th>
+                <th>{t('最后失败')}</th>
+                <th>{t('平均用时')}</th>
               </tr>
             </thead>
             <tbody>
               {summaryIps.length === 0 && (
                 <tr>
-                  <td className="inspect-discover-empty" colSpan={7}>
+                  <td className="inspect-discover-empty" colSpan={12}>
                     {running ? t('正在探测，结果将实时出现…') : t('输入主机列表后开始探测')}
                   </td>
                 </tr>
@@ -11255,19 +11329,24 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
                   >
                     <td className="mono">{ip}</td>
                     <td>{detail[ip]?.hostname || '-'}</td>
+                    <td className="mono">{row.replyIp || ip}</td>
                     <td className="mono">{row.ok}</td>
                     <td className="mono">{row.fail}</td>
+                    <td className="mono">{row.curStreak}</td>
+                    <td className="mono">{row.maxStreak}</td>
                     <td className="mono">{lossPct(row)}%</td>
-                    <td className="mono">{avgMs(row.rtts)}ms</td>
                     <td>
                       {row.lastOk === null ? (
                         <span className="scan-port-pending">…</span>
                       ) : row.lastOk ? (
-                        <span className="scan-port-on">✓</span>
+                        <span className="scan-port-on">✓ {t('响应')}</span>
                       ) : (
-                        <span className="scan-port-off">✗</span>
+                        <span className="scan-port-off">✗ {t('超时')}</span>
                       )}
                     </td>
+                    <td className="mono">{row.lastOkTime || '-'}</td>
+                    <td className="mono">{row.lastFailTime || '-'}</td>
+                    <td className="mono">{avgMs(row)}ms</td>
                   </tr>
                 )
               })}
@@ -11287,6 +11366,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
                 <tr>
                   <th>#</th>
                   <th>{t('时间')}</th>
+                  <th>{t('应答 IP')}</th>
                   <th>{t('状态')}</th>
                   <th>{t('往返时间')}</th>
                   <th>TTL</th>
@@ -11297,6 +11377,7 @@ function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
                   <tr key={row.seq}>
                     <td className="mono">{row.seq}</td>
                     <td className="mono">{row.time || '-'}</td>
+                    <td className="mono">{selectedIp}</td>
                     <td>
                       {row.ok ? (
                         <span className="scan-port-on">✓ {t('响应')}</span>
