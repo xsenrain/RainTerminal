@@ -1138,7 +1138,7 @@ pub fn decrypt_secret(cipher: String) -> Result<String, String> {
     }
 }
 
-// ==================== 网段发现（两阶段流式：先存活 → 再端口，全并行 + 短超时） ====================
+// ==================== 网段发现（两阶段流式：每 IP 一线程全并行，瞬间出结果） ====================
 
 #[derive(serde::Serialize, Clone)]
 pub struct InspectScanHit {
@@ -1195,10 +1195,33 @@ fn reverse_hostname(ip: std::net::Ipv4Addr) -> String {
     }
 }
 
+/// 并行执行 jobs 个任务：把 range 切成 per_batch 个一批，批内每项一个线程同时跑。
+/// 每完成一项回调 on_done（线程内调用，须线程安全）。
+fn run_parallel_batches<F>(jobs: usize, per_batch: usize, job: F)
+where
+    F: Fn(usize) + Send + Sync + Clone + 'static,
+{
+    let mut idx = 0usize;
+    while idx < jobs {
+        let len = per_batch.min(jobs - idx);
+        let start = idx;
+        let mut handles = Vec::with_capacity(len);
+        for j in 0..len {
+            let job = job.clone();
+            handles.push(std::thread::spawn(move || job(start + j)));
+        }
+        for handle in handles {
+            let _ = handle.join();
+        }
+        idx += len;
+    }
+}
+
 /// 扫描 [start_ip, end_ip] 范围内设备，两阶段流式（async + spawn_blocking，不阻塞主线程）：
-/// 1. 存活检测：每 IP 并行探测 22/23/445/80/443（200ms 超时，128 IP/批），命中立即推送 inspect-scan-alive
-/// 2. 端口探测：对存活 IP 并行探测 22/23/3389/5900/21/80/443（300ms 超时，64 IP/批），逐台推送 inspect-scan-port
-/// 进度：每批推送 inspect-scan-progress（phase: alive|ports）
+/// 1. 存活检测：每个 IP 一个线程、并行探测 22/23/445/80/443（200ms 超时），命中立即推送 inspect-scan-alive
+/// 2. 端口探测：每台存活设备一个线程、并行探测 22/23/3389/5900/21/80/443（300ms 超时），逐台推送 inspect-scan-port
+/// 进度：每完成一台推送 inspect-scan-progress（phase: alive|ports）
+/// 并发策略：≤512 台全并行（瞬间），更大范围按 256/批 分批次推进，避免线程爆炸。
 #[tauri::command]
 pub async fn scan_inspect_network(
     app: tauri::AppHandle,
@@ -1221,84 +1244,67 @@ pub async fn scan_inspect_network(
         let alive_ports: [u16; 5] = [22, 23, 445, 80, 443];
         let probe_ports: [u16; 7] = [22, 23, 3389, 5900, 21, 80, 443];
 
-        // ---------- 阶段 1：存活检测（128 IP/批），命中立即推送 ----------
+        // ---------- 阶段 1：存活检测（每 IP 一线程，≤512 全并行） ----------
         let alive: Arc<std::sync::Mutex<Vec<(std::net::Ipv4Addr, String)>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
         let processed = Arc::new(AtomicUsize::new(0));
-        let mut handles = Vec::new();
-        let mut idx = 0usize;
-        while idx < count {
-            let batch_len = 128usize.min(count - idx);
-            let batch_start = start_u + idx as u32;
+        let total = count;
+        let batch = if count <= 512 { count } else { 256 };
+
+        run_parallel_batches(count, batch, {
             let alive = Arc::clone(&alive);
             let processed = Arc::clone(&processed);
             let app = app.clone();
-            handles.push(std::thread::spawn(move || {
-                for j in 0..batch_len {
-                    let ip = std::net::Ipv4Addr::from(batch_start + j as u32);
-                    // 5 端口并行探测，最坏 200ms 判存活
-                    let open = probe_ports_parallel(ip, &alive_ports, Duration::from_millis(200));
-                    if !open.is_empty() {
-                        let name = reverse_hostname(ip);
-                        alive.lock().unwrap().push((ip, name.clone()));
-                        let _ = app.emit(
-                            "inspect-scan-alive",
-                            serde_json::json!({ "ip": ip.to_string(), "name": name }),
-                        );
-                    }
+            move |i| {
+                let ip = std::net::Ipv4Addr::from(start_u + i as u32);
+                let open = probe_ports_parallel(ip, &alive_ports, Duration::from_millis(200));
+                if !open.is_empty() {
+                    let name = reverse_hostname(ip);
+                    alive.lock().unwrap().push((ip, name.clone()));
+                    let _ = app.emit(
+                        "inspect-scan-alive",
+                        serde_json::json!({ "ip": ip.to_string(), "name": name }),
+                    );
                 }
-                let done = processed.fetch_add(batch_len, Ordering::SeqCst) + batch_len;
+                let done = processed.fetch_add(1, Ordering::SeqCst) + 1;
                 let _ = app.emit(
                     "inspect-scan-progress",
-                    serde_json::json!({ "phase": "alive", "scanned": done, "total": count }),
+                    serde_json::json!({ "phase": "alive", "scanned": done, "total": total }),
                 );
-            }));
-            idx += batch_len;
-        }
-        for handle in handles {
-            let _ = handle.join();
-        }
+            }
+        });
 
-        // ---------- 阶段 2：端口探测（64 IP/批，每台 7 端口并行），逐台推送 ----------
+        // ---------- 阶段 2：端口探测（每台一线程，≤512 全并行），逐台推送 ----------
         let alive_list = alive.lock().unwrap().clone();
         let hits: Arc<std::sync::Mutex<Vec<InspectScanHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let processed2 = Arc::new(AtomicUsize::new(0));
         let port_total = alive_list.len();
-        let mut handles2 = Vec::new();
-        let mut idx2 = 0usize;
-        while idx2 < port_total {
-            let batch_len = 64usize.min(port_total - idx2);
-            let batch_start = idx2;
+        let batch2 = if port_total <= 512 { port_total } else { 256 };
+
+        run_parallel_batches(port_total, batch2, {
+            let alive_list = alive_list.clone();
             let hits = Arc::clone(&hits);
             let processed = Arc::clone(&processed2);
-            let alive_list = alive_list.clone();
             let app = app.clone();
-            handles2.push(std::thread::spawn(move || {
-                for j in 0..batch_len {
-                    let (ip, name) = &alive_list[batch_start + j];
-                    // 7 端口并行探测，单台最坏 300ms
-                    let open = probe_ports_parallel(*ip, &probe_ports, Duration::from_millis(300));
-                    hits.lock().unwrap().push(InspectScanHit {
-                        ip: ip.to_string(),
-                        name: name.clone(),
-                        open_ports: open.clone(),
-                    });
-                    let _ = app.emit(
-                        "inspect-scan-port",
-                        serde_json::json!({ "ip": ip.to_string(), "open_ports": open }),
-                    );
-                }
-                let done = processed.fetch_add(batch_len, Ordering::SeqCst) + batch_len;
+            move |i| {
+                let (ip, name) = &alive_list[i];
+                let open = probe_ports_parallel(*ip, &probe_ports, Duration::from_millis(300));
+                hits.lock().unwrap().push(InspectScanHit {
+                    ip: ip.to_string(),
+                    name: name.clone(),
+                    open_ports: open.clone(),
+                });
+                let _ = app.emit(
+                    "inspect-scan-port",
+                    serde_json::json!({ "ip": ip.to_string(), "open_ports": open }),
+                );
+                let done = processed.fetch_add(1, Ordering::SeqCst) + 1;
                 let _ = app.emit(
                     "inspect-scan-progress",
                     serde_json::json!({ "phase": "ports", "scanned": done, "total": port_total }),
                 );
-            }));
-            idx2 += batch_len;
-        }
-        for handle in handles2 {
-            let _ = handle.join();
-        }
+            }
+        });
 
         let mut result = hits.lock().unwrap().clone();
         result.sort_by_key(|hit| {
