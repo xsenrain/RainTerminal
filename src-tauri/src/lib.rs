@@ -172,19 +172,25 @@ fn resolve_ssh_auth_profile(host: &str, user: &str, password: &str, port: u16) -
 }
 
 #[tauri::command]
-fn ssh_register_auth_profiles(profiles: Vec<SshAuthProfile>) -> Result<(), String> {
+fn ssh_register_auth_profiles(profiles: Vec<SshAuthProfile>) -> Result<usize, String> {
     let mut next = HashMap::new();
+    let mut registered = 0usize;
     for profile in profiles {
-        validate_ssh_auth_profile(&profile)?;
+        if validate_ssh_auth_profile(&profile).is_err() {
+            // 跳过无效条目（如未填密码的 password 认证、未填密钥路径的 key 认证），
+            // 不因单条配置不完整而阻断整体注册
+            continue;
+        }
         next.insert(
             ssh_auth_key(&profile.host, &profile.user, profile.port),
             profile,
         );
+        registered += 1;
     }
     *ssh_auth_registry()
         .lock()
         .map_err(|_| "SSH authentication registry is unavailable".to_string())? = next;
-    Ok(())
+    Ok(registered)
 }
 
 #[tauri::command]
