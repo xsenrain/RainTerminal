@@ -124,6 +124,7 @@ import {
   Terminal,
   Trash2,
   Upload,
+  Network,
   Wifi,
   Wrench,
   X,
@@ -10541,6 +10542,7 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
   const [discoverFinished, setDiscoverFinished] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
   const [discoverRows, setDiscoverRows] = useState<Record<string, { name: string; open_ports: number[] | null }>>({})
+  const [activeTool, setActiveTool] = useState<'discover' | 'ports' | 'ping' | 'subnet'>('discover')
 
   function parseCustomPorts(raw: string): number[] {
     return raw
@@ -10622,8 +10624,30 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
         <strong>{t('小工具')}</strong>
         <span>{t('常用网络与运维小工具集合')}</span>
       </div>
-      <div className="inspect-toolbox-grid">
-        <div className="inspect-toolbox-card">
+      <div className="inspect-toolbar">
+        {(
+          [
+            ['discover', <Wrench size={14} key="ic" />, t('网段发现')],
+            ['ports', <Wifi size={14} key="ic" />, t('端口扫描')],
+            ['ping', <Activity size={14} key="ic" />, t('Ping 工具')],
+            ['subnet', <Network size={14} key="ic" />, t('子网计算器')],
+          ] as const
+        ).map(([tool, icon, label]) => (
+          <button
+            key={tool}
+            type="button"
+            className={`inspect-toolbar-btn${activeTool === tool ? ' active' : ''}`}
+            onClick={() => setActiveTool(tool)}
+          >
+            {icon}
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="inspect-tool-panel">
+        {activeTool === 'discover' && (
+      <div className="inspect-toolbox-card">
           <div className="inspect-toolbox-card-head">
             <Wrench size={15} />
             <strong>{t('网段发现')}</strong>
@@ -10752,7 +10776,471 @@ function InspectToolbox({ onNotify }: { onNotify: (message: string) => void }) {
             </div>
           )}
         </div>
+        )}
+        {activeTool === 'ports' && <PortScanTool onNotify={onNotify} />}
+        {activeTool === 'ping' && <PingTool onNotify={onNotify} />}
+        {activeTool === 'subnet' && <SubnetCalcTool />}
       </div>
+    </div>
+  )
+}
+
+// ==================== 小工具：端口扫描 ====================
+
+const PORT_SERVICES: Record<number, string> = {
+  21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 67: 'DHCP', 68: 'DHCP',
+  80: 'HTTP', 110: 'POP3', 123: 'NTP', 143: 'IMAP', 161: 'SNMP', 389: 'LDAP',
+  443: 'HTTPS', 445: 'SMB', 514: 'Syslog', 636: 'LDAPS', 993: 'IMAPS', 995: 'POP3S',
+  1433: 'MSSQL', 1521: 'Oracle', 3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL',
+  5900: 'VNC', 6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt', 8888: 'HTTP-Alt',
+  9090: 'Web-Console', 9200: 'Elasticsearch', 11211: 'Memcached', 27017: 'MongoDB',
+}
+
+function parsePortList(raw: string): number[] {
+  const out = new Set<number>()
+  for (const part of raw.split(/[,，;；\s]+/)) {
+    const p = part.trim()
+    if (!p) continue
+    if (p.includes('-')) {
+      const [a, b] = p.split('-').map(Number)
+      if (Number.isInteger(a) && Number.isInteger(b) && a >= 1 && b <= 65535 && a <= b) {
+        for (let n = a; n <= b; n++) out.add(n)
+      }
+    } else {
+      const n = Number(p)
+      if (Number.isInteger(n) && n >= 1 && n <= 65535) out.add(n)
+    }
+  }
+  return [...out].sort((a, b) => a - b)
+}
+
+function PortScanTool({ onNotify }: { onNotify: (message: string) => void }) {
+  const { t } = useAppLocale()
+  const [host, setHost] = useState('127.0.0.1')
+  const [portsRaw, setPortsRaw] = useState('22,23,80,443,3389,5900')
+  const [scanning, setScanning] = useState(false)
+  const [rows, setRows] = useState<Record<number, boolean>>({})
+  const [openPorts, setOpenPorts] = useState<number[]>([])
+  const [scanned, setScanned] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [error, setError] = useState('')
+  const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    const tasks = [
+      listen<{ port: number; open: boolean }>('port-scan-hit', (event) => {
+        setRows((prev) => ({ ...prev, [event.payload.port]: event.payload.open }))
+        setOpenPorts((prev) =>
+          event.payload.open && !prev.includes(event.payload.port) ? [...prev, event.payload.port] : prev,
+        )
+      }).catch(() => () => undefined),
+      listen<{ scanned: number; total: number }>('port-scan-progress', (event) => {
+        setScanned(event.payload.scanned)
+        setTotal(event.payload.total)
+      }).catch(() => () => undefined),
+    ]
+    return () => {
+      void Promise.all(tasks).then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()))
+    }
+  }, [])
+
+  async function runScan() {
+    if (scanning) return
+    const ports = parsePortList(portsRaw)
+    if (ports.length === 0) {
+      setError(t('端口列表为空，请输入端口或范围'))
+      return
+    }
+    setScanning(true)
+    setError('')
+    setFinished(false)
+    setRows({})
+    setOpenPorts([])
+    setScanned(0)
+    setTotal(ports.length)
+    try {
+      const hits = await invoke<number[]>('scan_ports_tool', { host, ports })
+      setOpenPorts((prev) => [...new Set([...prev, ...hits])].sort((a, b) => a - b))
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setError(message)
+      onNotify(message)
+    } finally {
+      setScanning(false)
+      setFinished(true)
+    }
+  }
+
+  return (
+    <div className="inspect-toolbox-card">
+      <div className="inspect-toolbox-card-head">
+        <Wifi size={15} />
+        <strong>{t('端口扫描')}</strong>
+        <span>{t('扫描指定主机的端口开放情况（支持 IP/域名，范围如 1-1024,8080,8443），开放端口实时上屏')}</span>
+      </div>
+      <div className="inspect-discover-row">
+        <span className="inspect-discover-label">{t('主机')}</span>
+        <input
+          value={host}
+          onChange={(event) => setHost(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void runScan()
+          }}
+          placeholder="192.168.1.1"
+          disabled={scanning}
+        />
+        <span className="inspect-discover-dash">·</span>
+        <input
+          value={portsRaw}
+          onChange={(event) => setPortsRaw(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void runScan()
+          }}
+          placeholder="1-1024,8080,8443"
+          disabled={scanning}
+          style={{ flex: 1, maxWidth: 240 }}
+        />
+        <button className="utility-primary-button compact" type="button" onClick={() => void runScan()} disabled={scanning}>
+          <Search size={13} />
+          {scanning ? t('扫描中…') : t('开始扫描')}
+        </button>
+      </div>
+      <div className="inspect-port-presets">
+        {(
+          [
+            ['常用端口', '22,23,21,25,53,80,110,143,443,445,3306,3389,5432,5900,6379,8080,8443'],
+            ['Web', '80,443,8080,8443'],
+            ['1-1024', '1-1024'],
+            ['全端口', '1-65535'],
+          ] as const
+        ).map(([name, raw]) => (
+          <button key={name} type="button" className="inspect-preset-btn" disabled={scanning} onClick={() => setPortsRaw(raw)}>
+            {name}
+          </button>
+        ))}
+        <span className="inspect-preset-hint">{t('全端口约 1-2 分钟，建议用范围')}</span>
+      </div>
+      {scanning && (
+        <div className="inspect-scan-progress">
+          <div className="inspect-scan-progress-bar" style={{ width: `${total > 0 ? Math.min(100, (scanned / total) * 100) : 0}%` }} />
+          <span>
+            {t('扫描中')}… {scanned}/{total} · {t('已开放')} {openPorts.length} {t('个端口')}
+          </span>
+        </div>
+      )}
+      {(scanning || finished || Object.keys(rows).length > 0) && (
+        <div className="inspect-scan-table-wrap" style={{ maxHeight: 340, overflowY: 'auto' }}>
+          <table className="inspect-scan-table">
+            <thead>
+              <tr>
+                <th>{t('端口')}</th>
+                <th>{t('服务')}</th>
+                <th>{t('状态')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(rows).length === 0 && (
+                <tr>
+                  <td className="inspect-discover-empty" colSpan={3}>
+                    {error
+                      ? `${t('扫描失败')}：${error}`
+                      : finished
+                        ? t('扫描完成，未发现开放端口')
+                        : t('正在检测，开放端口将逐个出现…')}
+                  </td>
+                </tr>
+              )}
+              {Object.entries(rows)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([portStr, open]) => {
+                  const port = Number(portStr)
+                  return (
+                    <tr key={port}>
+                      <td className="mono">{port}</td>
+                      <td>{PORT_SERVICES[port] ?? '-'}</td>
+                      <td>
+                        {open ? (
+                          <span className="scan-port-on">✓ {t('开放')}</span>
+                        ) : (
+                          <span className="scan-port-off">✗ {t('关闭')}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==================== 小工具：Ping ====================
+
+function PingTool({ onNotify }: { onNotify: (message: string) => void }) {
+  const { t } = useAppLocale()
+  const [host, setHost] = useState('127.0.0.1')
+  const [count, setCount] = useState('10')
+  const [running, setRunning] = useState(false)
+  const [rows, setRows] = useState<{ seq: number; ok: boolean; rttMs: number }[]>([])
+  const [stats, setStats] = useState<{
+    sent: number
+    received: number
+    lossPct: number
+    avgMs: number
+    minMs: number
+    maxMs: number
+  } | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const task = listen<{ seq: number; ok: boolean; rttMs: number }>('ping-probe-result', (event) => {
+      setRows((prev) => [...prev, { seq: event.payload.seq, ok: event.payload.ok, rttMs: event.payload.rttMs }])
+    }).catch(() => () => undefined)
+    return () => {
+      void task.then((unlisten) => unlisten())
+    }
+  }, [])
+
+  async function runPing() {
+    if (running) return
+    const n = Math.max(1, Math.min(100, Number(count) || 10))
+    setRunning(true)
+    setError('')
+    setRows([])
+    setStats(null)
+    try {
+      const result = await invoke<{
+        sent: number
+        received: number
+        lossPct: number
+        avgMs: number
+        minMs: number
+        maxMs: number
+      }>('ping_probe_tool', { host, count: n })
+      setStats(result)
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      setError(message)
+      onNotify(message)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="inspect-toolbox-card">
+      <div className="inspect-toolbox-card-head">
+        <Activity size={15} />
+        <strong>{t('Ping 工具')}</strong>
+        <span>{t('连续探测主机连通性，实时显示每次往返时间，并统计丢包率与平均/最小/最大延迟')}</span>
+      </div>
+      <div className="inspect-discover-row">
+        <span className="inspect-discover-label">{t('主机')}</span>
+        <input
+          value={host}
+          onChange={(event) => setHost(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void runPing()
+          }}
+          placeholder="192.168.1.1"
+          disabled={running}
+        />
+        <span className="inspect-discover-dash">·</span>
+        <input
+          value={count}
+          onChange={(event) => setCount(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void runPing()
+          }}
+          placeholder="10"
+          disabled={running}
+          style={{ width: 64 }}
+          title={t('次数（1-100）')}
+        />
+        <button className="utility-primary-button compact" type="button" onClick={() => void runPing()} disabled={running}>
+          <RefreshCw size={13} />
+          {running ? t('探测中…') : t('开始探测')}
+        </button>
+      </div>
+      {stats && (
+        <div className="inspect-ping-stats">
+          <div>
+            <span>{t('发送')}</span>
+            <strong>{stats.sent}</strong>
+          </div>
+          <div>
+            <span>{t('接收')}</span>
+            <strong>{stats.received}</strong>
+          </div>
+          <div>
+            <span>{t('丢包率')}</span>
+            <strong className={stats.lossPct > 0 ? 'inspect-ping-warn' : ''}>{stats.lossPct.toFixed(1)}%</strong>
+          </div>
+          <div>
+            <span>{t('平均延迟')}</span>
+            <strong>{stats.avgMs.toFixed(1)}ms</strong>
+          </div>
+          <div>
+            <span>{t('最小延迟')}</span>
+            <strong>{stats.minMs}ms</strong>
+          </div>
+          <div>
+            <span>{t('最大延迟')}</span>
+            <strong>{stats.maxMs}ms</strong>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="inspect-discover-empty">
+          {t('探测失败')}：{error}
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div className="inspect-scan-table-wrap" style={{ maxHeight: 280, overflowY: 'auto' }}>
+          <table className="inspect-scan-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>{t('结果')}</th>
+                <th>{t('往返时间')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.seq}>
+                  <td className="mono">{row.seq}</td>
+                  <td>
+                    {row.ok ? (
+                      <span className="scan-port-on">✓ {t('响应')}</span>
+                    ) : (
+                      <span className="scan-port-off">✗ {t('超时')}</span>
+                    )}
+                  </td>
+                  <td className="mono">{row.ok ? `${row.rttMs}ms` : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==================== 小工具：子网计算器（纯前端） ====================
+
+interface SubnetResult {
+  network: string
+  broadcast: string
+  mask: string
+  maskBin: string
+  wildcard: string
+  hosts: number
+  first: string
+  last: string
+}
+
+function SubnetCalcTool() {
+  const { t } = useAppLocale()
+  const [cidr, setCidr] = useState('192.168.1.0/24')
+  const [result, setResult] = useState<SubnetResult | null>(null)
+  const [error, setError] = useState('')
+
+  function calc() {
+    const m = cidr.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/)
+    if (!m) {
+      setError(t('格式应为 IP/掩码位数，如 192.168.1.0/24'))
+      setResult(null)
+      return
+    }
+    const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]
+    const prefix = Number(m[5])
+    if (octets.some((o) => o > 255) || prefix > 32) {
+      setError(t('IP 或掩码位数无效'))
+      setResult(null)
+      return
+    }
+    const ipU = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0
+    const mask = prefix === 0 ? 0 : ((0xffffffff << (32 - prefix)) >>> 0)
+    const network = (ipU & mask) >>> 0
+    const broadcast = (network | ~mask) >>> 0
+    const hosts = prefix >= 31 ? (prefix === 32 ? 1 : 2) : Math.max(0, 2 ** (32 - prefix) - 2)
+    const toIp = (v: number) => `${v >>> 24}.${(v >>> 16) & 255}.${(v >>> 8) & 255}.${v & 255}`
+    setResult({
+      network: toIp(network),
+      broadcast: toIp(broadcast),
+      mask: toIp(mask),
+      maskBin: [0, 1, 2, 3].map((i) => ((mask >>> (24 - i * 8)) & 255).toString(2).padStart(8, '0')).join('.'),
+      wildcard: toIp(~mask >>> 0),
+      hosts,
+      first: hosts === 0 ? toIp(network) : toIp((network + 1) >>> 0),
+      last: hosts === 0 ? toIp(broadcast) : toIp((broadcast - 1) >>> 0),
+    })
+    setError('')
+  }
+
+  return (
+    <div className="inspect-toolbox-card">
+      <div className="inspect-toolbox-card-head">
+        <Network size={15} />
+        <strong>{t('子网计算器')}</strong>
+        <span>{t('输入 CIDR 网段，自动计算网络地址、广播地址、掩码与可用主机范围')}</span>
+      </div>
+      <div className="inspect-discover-row">
+        <span className="inspect-discover-label">CIDR</span>
+        <input
+          value={cidr}
+          onChange={(event) => setCidr(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') calc()
+          }}
+          placeholder="192.168.1.0/24"
+          style={{ maxWidth: 220 }}
+        />
+        <button className="utility-primary-button compact" type="button" onClick={calc}>
+          <Search size={13} />
+          {t('计算')}
+        </button>
+      </div>
+      {error && <div className="inspect-discover-empty">{error}</div>}
+      {result && (
+        <div className="inspect-subnet-results">
+          <div className="inspect-subnet-grid">
+            <div>
+              <span>{t('网络地址')}</span>
+              <strong className="mono">{result.network}</strong>
+            </div>
+            <div>
+              <span>{t('广播地址')}</span>
+              <strong className="mono">{result.broadcast}</strong>
+            </div>
+            <div>
+              <span>{t('子网掩码')}</span>
+              <strong className="mono">{result.mask}</strong>
+            </div>
+            <div>
+              <span>{t('可用主机数')}</span>
+              <strong>{result.hosts}</strong>
+            </div>
+            <div>
+              <span>{t('可用 IP 范围')}</span>
+              <strong className="mono">
+                {result.first} - {result.last}
+              </strong>
+            </div>
+            <div>
+              <span>{t('通配符掩码')}</span>
+              <strong className="mono">{result.wildcard}</strong>
+            </div>
+          </div>
+          <div className="inspect-subnet-maskbin">
+            <span>{t('掩码二进制')}</span>
+            <code className="mono">{result.maskBin}</code>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

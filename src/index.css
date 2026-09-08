@@ -7479,3 +7479,144 @@ body.native-window-drag-active .monitor-tabs button {
   color: var(--text-tertiary, #8b949e);
   opacity: 0.6;
 }
+
+/* ============ 小工具：工具栏 + 面板 ============ */
+.inspect-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inspect-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-primary, #24292f);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.inspect-toolbar-btn:hover {
+  border-color: var(--accent, #4f7cff);
+  color: var(--accent, #4f7cff);
+}
+.inspect-toolbar-btn.active {
+  background: var(--accent, #4f7cff);
+  border-color: var(--accent, #4f7cff);
+  color: #fff;
+}
+.inspect-tool-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.inspect-tool-panel > .inspect-toolbox-card {
+  max-width: 860px;
+}
+
+/* ============ 小工具：端口扫描 ============ */
+.inspect-port-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inspect-preset-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-secondary, #57606a);
+  font-size: 12px;
+  cursor: pointer;
+}
+.inspect-preset-btn:hover {
+  border-color: var(--accent, #4f7cff);
+  color: var(--accent, #4f7cff);
+}
+.inspect-preset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.inspect-preset-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary, #8b949e);
+}
+
+/* ============ 小工具：Ping ============ */
+.inspect-ping-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.inspect-ping-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.inspect-ping-stats span {
+  font-size: 11.5px;
+  color: var(--text-secondary, #57606a);
+}
+.inspect-ping-stats strong {
+  font-size: 16px;
+  font-family: Consolas, 'Courier New', monospace;
+}
+.inspect-ping-stats strong.inspect-ping-warn {
+  color: #d29922;
+}
+
+/* ============ 小工具：子网计算器 ============ */
+.inspect-subnet-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inspect-subnet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.inspect-subnet-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.inspect-subnet-grid span {
+  font-size: 11.5px;
+  color: var(--text-secondary, #57606a);
+}
+.inspect-subnet-grid strong {
+  font-size: 14px;
+  word-break: break-all;
+}
+.inspect-subnet-maskbin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 12.5px;
+}
+.inspect-subnet-maskbin span {
+  color: var(--text-secondary, #57606a);
+}
+.inspect-subnet-maskbin code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+}

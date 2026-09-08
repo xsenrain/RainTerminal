@@ -1175,8 +1175,9 @@ fn probe_ports_parallel(ip: std::net::Ipv4Addr, ports: &[u16], timeout: Duration
 }
 
 /// ICMP ping 存活检测（Windows 系统 API IcmpSendEcho，普通权限可用，即 ping.exe 底层实现）。
+/// 返回 Some(rtt_ms) 表示通，None 表示不通/超时。
 #[cfg(windows)]
-fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
+fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> Option<u32> {
     use std::ffi::c_void;
 
     #[repr(C)]
@@ -1208,7 +1209,7 @@ fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
     unsafe {
         let handle = IcmpCreateFile();
         if handle.is_null() {
-            return false;
+            return None;
         }
         let ip_net = u32::from_le_bytes(ip.octets()); // IPAddr=网络字节序, x86小端须 from_le_bytes 使内存为大端排列
         let data: [u8; 16] = *b"RainTerminalPing";
@@ -1228,17 +1229,21 @@ fn ping_host(ip: std::net::Ipv4Addr, timeout_ms: u32) -> bool {
         // 关键：必须同时满足 返回了回复 且 回复的 Status == IP_SUCCESS(0)。
         // 仅凭 sent > 0 会把 ICMP "Destination Unreachable"（不存在的 IP 由网关回包）误判为在线。
         if sent == 0 {
-            return false;
+            return None;
         }
-        // ICMP_ECHO_REPLY.Status 在缓冲区偏移 4（ULONG, little-endian）
+        // ICMP_ECHO_REPLY.Status 在缓冲区偏移 4（ULONG, little-endian），RTT 在偏移 8
         let status = u32::from_le_bytes([reply[4], reply[5], reply[6], reply[7]]);
-        status == 0
+        if status != 0 {
+            return None;
+        }
+        let rtt = u32::from_le_bytes([reply[8], reply[9], reply[10], reply[11]]);
+        Some(rtt)
     }
 }
 
 #[cfg(not(windows))]
-fn ping_host(_ip: std::net::Ipv4Addr, _timeout_ms: u32) -> bool {
-    false
+fn ping_host(_ip: std::net::Ipv4Addr, _timeout_ms: u32) -> Option<u32> {
+    None
 }
 
 /// 反向域名解析，带 600ms 超时兜底（DNS 慢时不阻塞扫描）。
@@ -1335,7 +1340,7 @@ pub async fn scan_inspect_network(
                 while std::time::Instant::now() < deadline {
                     let ping_handle = std::thread::spawn(move || ping_host(ip, 300));
                     open = probe_ports_parallel(ip, &all_ports, Duration::from_millis(200));
-                    let ping_up = ping_handle.join().unwrap_or(false);
+                    let ping_up = ping_handle.join().unwrap_or(None).is_some();
                     if ping_up || !open.is_empty() {
                         up = true;
                         break;
@@ -1385,13 +1390,163 @@ mod tests {
 
     #[test]
     fn icmp_loopback_is_up() {
-        assert!(ping_host(std::net::Ipv4Addr::LOCALHOST, 3000));
+        assert!(ping_host(std::net::Ipv4Addr::LOCALHOST, 3000).is_some());
     }
 
     #[test]
     fn icmp_test_net_is_down() {
         let ip: std::net::Ipv4Addr = "192.0.2.1".parse().unwrap();
-        assert!(!ping_host(ip, 1500));
+        assert!(ping_host(ip, 1500).is_none());
     }
 
+}
+
+// ==================== 小工具：端口扫描（单主机并行探测一组端口，流式） ====================
+
+/// 端口扫描：host 可为 IP 或域名（自动解析 IPv4）；ports 为待探测端口列表。
+/// 每端口一个短线程并行探测（256 端口/批），逐个推送 port-scan-hit（port/open），
+/// 进度推送 port-scan-progress（scanned/total），返回全部开放端口（升序）。
+#[tauri::command]
+pub async fn scan_ports_tool(
+    app: tauri::AppHandle,
+    host: String,
+    ports: Vec<u16>,
+) -> Result<Vec<u16>, String> {
+    let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u16>, String> {
+        let host = host.trim().to_string();
+        if host.is_empty() {
+            return Err("主机不能为空".to_string());
+        }
+        let ips = dns_lookup::lookup_host(&host).map_err(|e| format!("主机解析失败: {e}"))?;
+        let ip = ips
+            .into_iter()
+            .find(|ip| ip.is_ipv4())
+            .ok_or_else(|| "未找到该主机的 IPv4 地址".to_string())?;
+        let ip = match ip {
+            std::net::IpAddr::V4(v4) => v4,
+            _ => unreachable!(),
+        };
+        let mut ports: Vec<u16> = ports.into_iter().filter(|&p| p >= 1 && p <= 65535).collect();
+        ports.sort_unstable();
+        ports.dedup();
+        if ports.is_empty() {
+            return Err("端口列表为空".to_string());
+        }
+        let open: Arc<std::sync::Mutex<Vec<u16>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let scanned = Arc::new(AtomicUsize::new(0));
+        let total = ports.len();
+        run_parallel_batches(total, 256, {
+            let ip = ip;
+            let ports = ports.clone();
+            let open = Arc::clone(&open);
+            let scanned = Arc::clone(&scanned);
+            let app = app.clone();
+            move |i| {
+                let port = ports[i];
+                let ok = tcp_probe(ip, port, Duration::from_millis(300));
+                if ok {
+                    open.lock().unwrap().push(port);
+                }
+                let _ = app.emit(
+                    "port-scan-hit",
+                    serde_json::json!({ "port": port, "open": ok }),
+                );
+                let done = scanned.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = app.emit(
+                    "port-scan-progress",
+                    serde_json::json!({ "scanned": done, "total": total }),
+                );
+            }
+        });
+        let mut result = open.lock().unwrap().clone();
+        result.sort_unstable();
+        Ok(result)
+    });
+    spawned
+        .await
+        .map_err(|e| format!("端口扫描线程异常: {e}"))?
+}
+
+// ==================== 小工具：Ping（连续探测 + RTT/丢包统计，流式） ====================
+
+#[derive(serde::Serialize, Clone)]
+pub struct PingProbeStats {
+    pub host: String,
+    pub ip: String,
+    pub sent: u32,
+    pub received: u32,
+    pub loss_pct: f64,
+    pub avg_ms: f64,
+    pub min_ms: u32,
+    pub max_ms: u32,
+}
+
+/// 连续 ping：对 host（IP/域名）探测 count 次（1-100，默认 10），每次间隔 300ms。
+/// 每次结果推送 ping-probe-result（seq/ok/rttMs），最后返回统计。
+#[tauri::command]
+pub async fn ping_probe_tool(
+    app: tauri::AppHandle,
+    host: String,
+    count: u32,
+) -> Result<PingProbeStats, String> {
+    let spawned = tauri::async_runtime::spawn_blocking(move || -> Result<PingProbeStats, String> {
+        let host = host.trim().to_string();
+        if host.is_empty() {
+            return Err("主机不能为空".to_string());
+        }
+        let ips = dns_lookup::lookup_host(&host).map_err(|e| format!("主机解析失败: {e}"))?;
+        let ip = ips
+            .into_iter()
+            .find(|ip| ip.is_ipv4())
+            .ok_or_else(|| "未找到该主机的 IPv4 地址".to_string())?;
+        let ip = match ip {
+            std::net::IpAddr::V4(v4) => v4,
+            _ => unreachable!(),
+        };
+        let count = count.clamp(1, 100);
+        let mut received = 0u32;
+        let mut times: Vec<u32> = Vec::new();
+        for seq in 1..=count {
+            let started = std::time::Instant::now();
+            let rtt = ping_host(ip, 1000);
+            let elapsed_ms = started.elapsed().as_millis() as u32;
+            if let Some(r) = rtt {
+                received += 1;
+                times.push(r);
+            }
+            let _ = app.emit(
+                "ping-probe-result",
+                serde_json::json!({ "seq": seq, "ok": rtt.is_some(), "rtt_ms": rtt.unwrap_or(elapsed_ms) }),
+            );
+            if seq < count {
+                std::thread::sleep(Duration::from_millis(300));
+            }
+        }
+        let sent = count;
+        let loss_pct = if sent > 0 {
+            (sent - received) as f64 / sent as f64 * 100.0
+        } else {
+            0.0
+        };
+        let avg_ms = if times.is_empty() {
+            0.0
+        } else {
+            times.iter().sum::<u32>() as f64 / times.len() as f64
+        };
+        let min_ms = times.iter().copied().min().unwrap_or(0);
+        let max_ms = times.iter().copied().max().unwrap_or(0);
+        Ok(PingProbeStats {
+            host: host.clone(),
+            ip: ip.to_string(),
+            sent,
+            received,
+            loss_pct,
+            avg_ms,
+            min_ms,
+            max_ms,
+        })
+    });
+    spawned
+        .await
+        .map_err(|e| format!("ping 线程异常: {e}"))?
 }

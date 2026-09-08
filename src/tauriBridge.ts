@@ -221,6 +221,47 @@ async function mockInvoke<T>(command: string, args: Record<string, unknown>): Pr
       window.setTimeout(() => emitSandbox('inspect-scan-progress', { phase: 'ports', scanned: list.length, total: list.length }), 1000)
       return list as T
     }
+    case 'scan_ports_tool': {
+      // 沙箱 mock：模拟流式端口检测（奇数为开放）
+      const ports: number[] = Array.isArray(args.ports)
+        ? (args.ports as number[]).filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535)
+        : []
+      const open = ports.filter((p) => p % 2 === 1)
+      ports.forEach((port, index) => {
+        window.setTimeout(() => emitSandbox('port-scan-hit', { port, open: open.includes(port) }), 60 + index * 35)
+        window.setTimeout(
+          () => emitSandbox('port-scan-progress', { scanned: index + 1, total: ports.length }),
+          80 + index * 35,
+        )
+      })
+      return open as T
+    }
+    case 'ping_probe_tool': {
+      // 沙箱 mock：模拟连续 ping（每 4 次失败 1 次）
+      const host = typeof args.host === 'string' ? args.host : '127.0.0.1'
+      const count = Math.max(1, Math.min(100, Number(args.count) || 10))
+      let received = 0
+      const rtts: number[] = []
+      for (let seq = 1; seq <= count; seq++) {
+        const ok = seq % 4 !== 0
+        const rtt = ok ? 2 + ((seq * 7) % 24) : 1000
+        if (ok) {
+          received += 1
+          rtts.push(rtt)
+        }
+        window.setTimeout(() => emitSandbox('ping-probe-result', { seq, ok, rttMs: rtt }), seq * 500)
+      }
+      return {
+        host,
+        ip: '127.0.0.1',
+        sent: count,
+        received,
+        lossPct: ((count - received) / count) * 100,
+        avgMs: rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : 0,
+        minMs: rtts.length ? Math.min(...rtts) : 0,
+        maxMs: rtts.length ? Math.max(...rtts) : 0,
+      } as T
+    }
     case 'batch_execute_inspect': {
       const devices = Array.isArray(args.devices) ? args.devices : []
       const commands = Array.isArray(args.commands) ? args.commands : []
