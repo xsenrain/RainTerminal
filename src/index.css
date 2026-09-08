@@ -7679,9 +7679,13 @@ body.native-window-drag-active .monitor-tabs button {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
 }
 .inspect-tool-pane .inspect-toolbox-card {
   max-width: none;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ============ 小工具：端口扫描 ============ */
@@ -7897,10 +7901,10 @@ body.native-window-drag-active .monitor-tabs button {
   flex: 0 0 auto;
 }
 .inspect-toolbox-card > .inspect-fill-scroll {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
 }
 .inspect-fill-scroll {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: 100%;
   overflow-y: auto;
@@ -7967,7 +7971,8 @@ body.native-window-drag-active .monitor-tabs button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .inspect-pwd-row {

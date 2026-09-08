@@ -1227,3 +1227,14 @@ MTR 路由追踪（mtr tab）：
 - 逐条复制 / 一键复制全部
 
 注册 start_tracert/stop_tracert 到 invoke_handler；index.css 新增工具样式；tsc 零错误
+
+---
+
+## 2026-09-08 · MTR/密码生成器布局平铺 + 密码导出
+
+- 布局平铺：.inspect-tool-pane/.inspect-toolbox-card 加 flex:1+min-height:0，
+  .inspect-fill-scroll 改 flex:1 1 auto，.inspect-pwd-list 去掉 320px 封顶改 flex 撑满
+  —— MTR 表格与密码列表内容多时铺满到底、内部滚动，与网段发现一致
+- 密码导出：新增后端 export_passwords_file（另存为对话框，txt 过滤器，写文件），
+  "复制全部"右侧加"导出"按钮，导出后 onNotify 显示保存路径
+- 注意：插入 tauri command 时若锚点不含 #[tauri::command] 会切坏相邻命令属性，需回补

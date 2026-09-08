@@ -12071,6 +12071,22 @@ function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) 
     }
   }
 
+  async function exportPasswords() {
+    if (passwords.length === 0) return
+    try {
+      const path = await invoke<string | null>('export_passwords_file', {
+        defaultName: 'RainTerminal-passwords.txt',
+        content: passwords.join('\r\n') + '\r\n',
+      })
+      if (!path) return
+      setCopied(t('已导出'))
+      onNotify(`${t('已导出')}：${path}`)
+    } catch (reason) {
+      const message = String(reason).replace(/^Error:\s*/i, '')
+      onNotify(message)
+    }
+  }
+
   return (
     <div className="inspect-toolbox-card">
       <div className="inspect-toolbox-card-head">
@@ -12128,6 +12144,10 @@ function PasswordGenTool({ onNotify }: { onNotify: (message: string) => void }) 
         <button className="ghost-button compact" type="button" onClick={() => void copyAll()} disabled={passwords.length === 0}>
           <Copy size={13} />
           {copied || t('复制全部')}
+        </button>
+        <button className="ghost-button compact" type="button" onClick={() => void exportPasswords()} disabled={passwords.length === 0}>
+          <Download size={13} />
+          {t('导出')}
         </button>
       </div>
       {passwords.length > 0 && (

@@ -2000,6 +2000,25 @@ async fn choose_log_directory() -> Result<Option<String>, String> {
 
 /// 保存会话日志：系统"另存为"对话框（路径 + 可编辑文件名），返回完整路径
 #[tauri::command]
+async fn export_passwords_file(default_name: String, content: String) -> Result<Option<String>, String> {
+    run_blocking(move || {
+        let path = match rfd::FileDialog::new()
+            .set_title("导出密码")
+            .set_file_name(&default_name)
+            .add_filter("文本文件", &["txt"])
+            .save_file()
+        {
+            Some(path) => path,
+            None => return Ok(None),
+        };
+        std::fs::write(&path, content.as_bytes())
+            .map_err(|error| format!("写入文件失败: {error}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+}
+
+#[tauri::command]
 async fn choose_log_file(default_name: String) -> Result<Option<String>, String> {
     run_blocking(move || {
         Ok(rfd::FileDialog::new()
@@ -7557,6 +7576,7 @@ pub fn run() {
             batch_inspect::ping_probe_tool,
             batch_inspect::ping_batch_tool,
             batch_inspect::start_tracert,
+            export_passwords_file,
             batch_inspect::stop_tracert,
         ])
         .run(tauri::generate_context!())
