@@ -537,8 +537,14 @@ type LocalSystemStats = {
   memory_total: number
   disk_used: number
   disk_total: number
+  swap_used: number
+  swap_total: number
   network_received: number
   network_transmitted: number
+  cpu_cores: number
+  cpu_freq_mhz: number
+  tcp_connections: number
+  udp_connections: number
 }
 
 type SystemProcessEntry = {
@@ -807,7 +813,7 @@ const monitorViewCache = new Map<string, {
   serverId?: string
   metric: MonitorMetric
   stats: LocalSystemStats | null
-  history: Record<MonitorMetric, number[]>
+  history: MonitorHistory
   lastNetwork: number
 }>()
 const processViewCache = new Map<string, {
@@ -9025,6 +9031,8 @@ function FileTextEditor({
 }
 
 type MonitorMetric = 'cpu' | 'memory' | 'disk' | 'network'
+type MonitorHistoryKey = MonitorMetric | 'swap' | 'networkUp' | 'networkDown' | 'tcp' | 'udp'
+type MonitorHistory = Record<MonitorHistoryKey, number[]>
 
 function MachineMonitorWidget({
   widgetId = '',
@@ -9046,12 +9054,15 @@ function MachineMonitorWidget({
   const { t } = useAppLocale()
   const rememberedView = widgetId ? monitorViewCache.get(widgetId) : undefined
   const canRestoreView = rememberedView?.serverId === server?.id
-  const emptyHistory: Record<MonitorMetric, number[]> = { cpu: [], memory: [], disk: [], network: [] }
+  const emptyHistory: MonitorHistory = { cpu: [], memory: [], disk: [], network: [], swap: [], networkUp: [], networkDown: [], tcp: [], udp: [] }
   const [stats, setStats] = useState<LocalSystemStats | null>(canRestoreView ? rememberedView?.stats ?? null : null)
   const [error, setError] = useState(server && !hasSshAuthentication(server) ? '请选择可用连接，或补全该服务器的 SSH 认证信息。' : '')
   const [metric, setMetric] = useState<MonitorMetric>(canRestoreView ? rememberedView?.metric ?? 'cpu' : 'cpu')
-  const [history, setHistory] = useState<Record<MonitorMetric, number[]>>(canRestoreView ? rememberedView?.history ?? emptyHistory : emptyHistory)
-  const lastNetworkRef = useRef(canRestoreView ? rememberedView?.lastNetwork ?? 0 : 0)
+  const [history, setHistory] = useState<MonitorHistory>(canRestoreView ? rememberedView?.history ?? emptyHistory : emptyHistory)
+  const lastUpRef = useRef(0)
+  const lastDownRef = useRef(0)
+  const lastUpValueRef = useRef(0)
+  const lastDownValueRef = useRef(0)
   const previousServerIdRef = useRef(server?.id)
   const refreshInFlightRef = useRef(false)
   const refreshOffsetRef = useRef(Math.floor(Math.random() * 500))
@@ -9070,7 +9081,7 @@ function MachineMonitorWidget({
       metric,
       stats,
       history,
-      lastNetwork: lastNetworkRef.current,
+      lastNetwork: lastUpRef.current + lastDownRef.current,
     })
   }, [history, metric, server?.id, stats, widgetId])
 
@@ -9089,15 +9100,25 @@ function MachineMonitorWidget({
           setError('')
           const memoryPercent = percent(nextStats.memory_used, nextStats.memory_total)
           const diskPercent = percent(nextStats.disk_used, nextStats.disk_total)
-          const networkTotal = nextStats.network_received + nextStats.network_transmitted
-          const networkDelta = lastNetworkRef.current > 0 ? Math.max(0, networkTotal - lastNetworkRef.current) : 0
-          lastNetworkRef.current = networkTotal
-          const networkValue = Math.min(100, networkDelta / 1024 / 1024)
+          const swapPercent = percent(nextStats.swap_used, nextStats.swap_total)
+          const upDelta = lastUpRef.current > 0 ? Math.max(0, nextStats.network_transmitted - lastUpRef.current) : 0
+          const downDelta = lastDownRef.current > 0 ? Math.max(0, nextStats.network_received - lastDownRef.current) : 0
+          const upValue = upDelta / 1024 / 1024
+          const downValue = downDelta / 1024 / 1024
+          lastUpRef.current = nextStats.network_transmitted
+          lastDownRef.current = nextStats.network_received
+          lastUpValueRef.current = upValue
+          lastDownValueRef.current = downValue
           setHistory((current) => ({
             cpu: [...current.cpu, nextStats.cpu_usage].slice(-60),
             memory: [...current.memory, memoryPercent].slice(-60),
             disk: [...current.disk, diskPercent].slice(-60),
-            network: [...current.network, networkValue].slice(-60),
+            network: [...current.network, Math.max(upValue, downValue)].slice(-60),
+            swap: [...current.swap, swapPercent].slice(-60),
+            networkUp: [...current.networkUp, upValue].slice(-60),
+            networkDown: [...current.networkDown, downValue].slice(-60),
+            tcp: [...current.tcp, nextStats.tcp_connections ?? 0].slice(-60),
+            udp: [...current.udp, nextStats.udp_connections ?? 0].slice(-60),
           }))
         })
       })
@@ -9131,8 +9152,9 @@ function MachineMonitorWidget({
     if (previousServerIdRef.current === server?.id) return
     previousServerIdRef.current = server?.id
     setStats(null)
-    setHistory({ cpu: [], memory: [], disk: [], network: [] })
-    lastNetworkRef.current = 0
+    setHistory({ cpu: [], memory: [], disk: [], network: [], swap: [], networkUp: [], networkDown: [], tcp: [], udp: [] })
+    lastUpRef.current = 0
+    lastDownRef.current = 0
     setError(remoteMissingPassword ? '请选择可用连接，或补全该服务器的 SSH 认证信息。' : '')
   }, [remoteMissingPassword, server?.id])
 
@@ -9177,11 +9199,62 @@ function MachineMonitorWidget({
           <span>{activeCard.detail}</span>
         </div>
       </div>
-      <div className="monitor-grid">
-        {metricCards.map((item) => (
-          <InfoRow icon={item.icon} label={item.label} value={item.value} key={item.key} />
-        ))}
-      </div>
+      {stats && (
+        <div className="monitor-overview">
+          <MonitorResourceCard
+            title="CPU"
+            value={`${Math.round(stats.cpu_usage)}%`}
+            sub={stats.cpu_cores ? `${stats.cpu_cores} 核${stats.cpu_freq_mhz > 0 ? ` · ${(stats.cpu_freq_mhz / 1000).toFixed(2)} GHz` : ''}` : `${stats.process_count} 进程`}
+            avg={avgOf(history.cpu)}
+            peak={peakOf(history.cpu)}
+            spark={history.cpu}
+          />
+          <MonitorResourceCard
+            title="内存"
+            value={`${percent(stats.memory_used, stats.memory_total).toFixed(1)}%`}
+            sub={`${formatBytes(stats.memory_used)} / ${formatBytes(stats.memory_total)}`}
+            avg={avgOf(history.memory)}
+            peak={peakOf(history.memory)}
+            spark={history.memory}
+          />
+          <MonitorResourceCard
+            title="交换空间"
+            value={`${percent(stats.swap_used, stats.swap_total).toFixed(1)}%`}
+            sub={stats.swap_total > 0 ? `${formatBytes(stats.swap_used)} / ${formatBytes(stats.swap_total)}` : '未启用'}
+            avg={avgOf(history.swap)}
+            peak={peakOf(history.swap)}
+            spark={history.swap}
+          />
+          <MonitorResourceCard
+            title="存储"
+            value={`${percent(stats.disk_used, stats.disk_total).toFixed(1)}%`}
+            sub={`${formatBytes(stats.disk_used)} / ${formatBytes(stats.disk_total)}`}
+            avg={avgOf(history.disk)}
+            peak={peakOf(history.disk)}
+            spark={history.disk}
+          />
+          <div className="monitor-net-card">
+            <div className="mrc-top">
+              <span className="mrc-title">网络</span>
+              <span className="mrc-value net-rate">↑ {formatRate(lastUpValueRef.current)} · ↓ {formatRate(lastDownValueRef.current)}</span>
+            </div>
+            <div className="mrc-sub">网卡峰值 {formatRate(peakOf(history.network))} · 均值 {formatRate(avgOf(history.network))}</div>
+            <MiniDualSpark up={history.networkUp} down={history.networkDown} />
+            <div className="mrc-stats">
+              <span>已发送 {formatBytes(stats.network_transmitted)}</span>
+              <span>已接收 {formatBytes(stats.network_received)}</span>
+            </div>
+          </div>
+          <div className="monitor-conn-card">
+            <div className="mrc-top">
+              <span className="mrc-title">连接数</span>
+              <span className="mrc-value">{(stats.tcp_connections ?? 0) + (stats.udp_connections ?? 0)} 套接字</span>
+            </div>
+            <div className="mrc-sub">TCP {(stats.tcp_connections ?? 0)} · UDP {(stats.udp_connections ?? 0)}</div>
+            <MiniDualSpark up={history.tcp} down={history.udp} labels={['TCP', 'UDP']} />
+          </div>
+        </div>
+      )}
       {remoteArgs && remoteReady && !active && !stats && !error && <p className="empty-note">{t('正在排队读取监控...')}</p>}
       {error && <p className="empty-note">{error}</p>}
     </div>
@@ -16264,6 +16337,97 @@ function MonitorSparkline({ values }: { values: number[] }) {
         {safeValues.length} {t('次采样')}
       </text>
     </svg>
+  )
+}
+
+function avgOf(arr: number[]) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+}
+
+function peakOf(arr: number[]) {
+  return arr.length ? Math.max(...arr) : 0
+}
+
+function formatRate(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0 B/s'
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
+  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function MiniSpark({ values, lineColor, areaColor }: { values: number[]; lineColor: string; areaColor: string }) {
+  const safe = values.length > 1 ? values : [0, values[0] ?? 0]
+  const W = 150
+  const H = 30
+  const pts = safe.map((v, i) => ({
+    x: (i / Math.max(1, safe.length - 1)) * W,
+    y: H - (Math.max(0, Math.min(100, v)) / 100) * H,
+  }))
+  const line = smoothPath(pts)
+  const area = pts.length > 1 ? `${line} L ${W.toFixed(1)},${H} L 0,${H} Z` : ''
+  return (
+    <svg className="mini-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {pts.length > 1 && <polygon points={area} style={{ fill: areaColor }} />}
+      <path className="ms-line" d={line} style={{ stroke: lineColor }} fill="none" />
+      <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r={2} className="ms-dot" style={{ fill: lineColor }} />
+    </svg>
+  )
+}
+
+function MiniDualSpark({ up, down, labels }: { up: number[]; down: number[]; labels?: [string, string] }) {
+  const maxV = Math.max(1, ...up, ...down)
+  const W = 150
+  const H = 30
+  const make = (arr: number[]) => {
+    const safe = arr.length > 1 ? arr : [0, arr[0] ?? 0]
+    return safe.map((v, i) => ({
+      x: (i / Math.max(1, safe.length - 1)) * W,
+      y: H - (Math.max(0, Math.min(1, v / maxV)) * 0.92) * H,
+    }))
+  }
+  const upPts = make(up)
+  const downPts = make(down)
+  const upLine = smoothPath(upPts)
+  const downLine = smoothPath(downPts)
+  const upArea = upPts.length > 1 ? `${upLine} L ${W.toFixed(1)},${H} L 0,${H} Z` : ''
+  const downArea = downPts.length > 1 ? `${downLine} L ${W.toFixed(1)},${H} L 0,${H} Z` : ''
+  return (
+    <svg className="mini-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {upPts.length > 1 && <polygon points={upArea} style={{ fill: 'rgba(142,203,255,0.14)' }} />}
+      {downPts.length > 1 && <polygon points={downArea} style={{ fill: 'rgba(84,214,180,0.12)' }} />}
+      <path className="ms-line" d={upLine} style={{ stroke: '#8ecbff' }} fill="none" />
+      <path className="ms-line" d={downLine} style={{ stroke: '#54d6b4' }} fill="none" />
+      {labels && (
+        <g className="mini-legend">
+          <text x={0} y={9}>{labels[0]}</text>
+          <text x={W} y={9} textAnchor="end">{labels[1]}</text>
+        </g>
+      )}
+    </svg>
+  )
+}
+
+function MonitorResourceCard({ title, value, sub, avg, peak, spark }: {
+  title: string
+  value: string
+  sub: string
+  avg: number
+  peak: number
+  spark: number[]
+}) {
+  return (
+    <div className="monitor-res-card">
+      <div className="mrc-top">
+        <span className="mrc-title">{title}</span>
+        <span className="mrc-value">{value}</span>
+      </div>
+      <div className="mrc-sub">{sub}</div>
+      <MiniSpark values={spark} lineColor="var(--accent, #8ecbff)" areaColor="rgba(142,203,255,0.14)" />
+      <div className="mrc-stats">
+        <span>均值 {avg.toFixed(1)}%</span>
+        <span>峰值 {peak.toFixed(1)}%</span>
+      </div>
+    </div>
   )
 }
 

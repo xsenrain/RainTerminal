@@ -738,3 +738,18 @@ esetInspectWorkspace 改为纯前端操作：清空巡检结果、设备勾选�
   - 最高/最低点圆点与数值标注
   - 面积填充保留，底部显示采样次数
 - 验证：npm run build 通过
+
+---
+
+## 2026-09-08 · 监控面板专业重设计（对标资源监控面板）
+
+- 后端 LocalSystemStats 新增字段：swap_used/swap_total、cpu_cores、cpu_freq_mhz、tcp_connections/udp_connections
+  - 远程 Linux：/proc/meminfo Swap、/proc/cpuinfo MHz、ss -tan/-uan 连接数
+  - 本地 Windows：sysinfo swap/cores/frequency + netstat -ano 连接数
+- 前端重设计（移除原 InfoRow 列表，新增概览卡片区）：
+  - 4 资源卡（CPU/内存/交换空间/存储）：大数字 + 副信息 + 均值/峰值 + 迷你折线
+  - 网络卡：↑上传/↓下载实时速率 + 网卡峰值/均值 + 已发送/已接收总量 + 蓝/青双线图
+  - 连接数卡：TCP/UDP 套接字数 + 双线图
+  - 保留顶部指标切换 + 大图（含当前值/最值/刻度）
+- history 扩展：swap/networkUp/networkDown/tcp/udp 各 60 点
+- 验证：npm build + cargo check + cargo test(2 passed)

@@ -1412,8 +1412,14 @@ struct LocalSystemStats {
     memory_total: u64,
     disk_used: u64,
     disk_total: u64,
+    swap_used: u64,
+    swap_total: u64,
     network_received: u64,
     network_transmitted: u64,
+    cpu_cores: u32,
+    cpu_freq_mhz: f32,
+    tcp_connections: u32,
+    udp_connections: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -2570,6 +2576,15 @@ fn local_system_stats_sync(
                     available.saturating_add(disk.available_space()),
                 )
             });
+    let swap_used = system.used_swap();
+    let swap_total = system.total_swap();
+    let cpu_cores = system.cpus().len() as u32;
+    let cpu_freq_mhz = system
+        .cpus()
+        .first()
+        .map(|cpu| cpu.frequency() as f32)
+        .unwrap_or(0.0);
+    let (tcp_connections, udp_connections) = local_connection_counts();
     let networks = Networks::new_with_refreshed_list();
     let (network_received, network_transmitted) =
         networks
@@ -2592,8 +2607,14 @@ fn local_system_stats_sync(
         memory_total: system.total_memory(),
         disk_used: disk_total.saturating_sub(disk_available),
         disk_total,
+        swap_used,
+        swap_total,
         network_received,
         network_transmitted,
+        cpu_cores,
+        cpu_freq_mhz,
+        tcp_connections,
+        udp_connections,
     };
 
     if let Ok(mut guard) = cache.lock() {
@@ -2601,6 +2622,25 @@ fn local_system_stats_sync(
     }
 
     Ok(stats)
+}
+
+fn local_connection_counts() -> (u32, u32) {
+    let output = std::process::Command::new("netstat")
+        .args(["-ano"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default();
+    let mut tcp = 0u32;
+    let mut udp = 0u32;
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("TCP") {
+            tcp += 1;
+        } else if trimmed.starts_with("UDP") {
+            udp += 1;
+        }
+    }
+    (tcp, udp)
 }
 
 fn default_local_shell_command() -> CommandBuilder {
@@ -5277,6 +5317,9 @@ printf "__XUNDU_LOADAVG__\n"; cat /proc/loadavg 2>/dev/null || true
 printf "__XUNDU_MEMINFO__\n"; cat /proc/meminfo 2>/dev/null || true
 printf "__XUNDU_DF__\n"; df -B1 / 2>/dev/null | tail -n 1 || true
 printf "__XUNDU_NETDEV__\n"; cat /proc/net/dev 2>/dev/null || true
+printf "__XUNDU_SWAP__\n"; awk '/^SwapTotal/{t=$2} /^SwapFree/{f=$2} END{printf "%d %d", t, f}' /proc/meminfo 2>/dev/null || true
+printf "__XUNDU_FREQ__\n"; awk '/^cpu MHz/{print $4; exit}' /proc/cpuinfo 2>/dev/null || true
+printf "__XUNDU_CONN__\n"; ss -tan 2>/dev/null | awk 'NR>1{c++} END{print c+0}'; ss -uan 2>/dev/null | awk 'NR>1{c++} END{print c+0}'
 printf "__XUNDU_PROCS__\n"; find /proc -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l
 '"#
     .to_string();
@@ -5328,6 +5371,22 @@ fn parse_remote_stats_snapshot(output: &str) -> Result<LocalSystemStats, String>
     let process_count = first_section_line(output, "__XUNDU_PROCS__")
         .and_then(|value| value.trim().parse::<usize>().ok())
         .unwrap_or(0);
+    let swap_lines = section(output, "__XUNDU_SWAP__")
+        .split_whitespace()
+        .filter_map(|v| v.parse::<u64>().ok())
+        .collect::<Vec<_>>();
+    let swap_total = swap_lines.first().copied().unwrap_or(0).saturating_mul(1024);
+    let swap_free = swap_lines.get(1).copied().unwrap_or(0).saturating_mul(1024);
+    let cpu_freq_mhz = first_section_line(output, "__XUNDU_FREQ__")
+        .and_then(|value| value.trim().parse::<f32>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(0.0);
+    let conn_lines = section(output, "__XUNDU_CONN__")
+        .lines()
+        .filter_map(|v| v.trim().parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    let tcp_connections = conn_lines.first().copied().unwrap_or(0);
+    let udp_connections = conn_lines.get(1).copied().unwrap_or(0);
 
     if memory_total == 0 && disk_total == 0 && process_count == 0 {
         return Err("Failed to parse remote stats snapshot".into());
@@ -5344,8 +5403,14 @@ fn parse_remote_stats_snapshot(output: &str) -> Result<LocalSystemStats, String>
         memory_total,
         disk_used,
         disk_total,
+        swap_used: swap_total.saturating_sub(swap_free),
+        swap_total,
         network_received,
         network_transmitted,
+        cpu_cores: cores as u32,
+        cpu_freq_mhz,
+        tcp_connections,
+        udp_connections,
     })
 }
 
